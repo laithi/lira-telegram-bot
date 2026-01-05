@@ -3,44 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>دليل الليرة السورية</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>دليل الليرة</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-        body { -webkit-tap-highlight-color: transparent; }
-        input[type="number"]::-webkit-inner-spin-button, 
-        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--tg-theme-bg-color, #f8fafc); color: var(--tg-theme-text-color, #1e293b); margin: 0; }
+        .tg-card { background-color: var(--tg-theme-secondary-bg-color, #ffffff); }
+        .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, #ffffff); }
     </style>
 </head>
-<body class="bg-slate-50 font-sans">
+<body>
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect } = React;
-
+        const RATE = 100;
         const DENOMS = [
-            { v: 500, n: 'سنابل القمح', s: '🌾' },
-            { v: 200, n: 'أغصان الزيتون', s: '🫒' },
-            { v: 100, n: 'القطن السوري', s: '☁️' }, 
-            { v: 50, n: 'الحمضيات', s: '🍊' },
-            { v: 25, n: 'العنب', s: '🍇' },
-            { v: 10, n: 'ياسمين الشام', s: '🌸' }
+            { v: 500, n: 'سنابل القمح', s: '🌾' }, { v: 200, n: 'أغصان الزيتون', s: '🫒' },
+            { v: 100, n: 'القطن السوري', s: '☁️' }, { v: 50, n: 'الحمضيات', s: '🍊' },
+            { v: 25, n: 'العنب', s: '🍇' }, { v: 10, n: 'ياسمين الشام', s: '🌼' }
         ];
 
         function App() {
             const [val, setVal] = useState('');
-            const [mode, setMode] = useState('oldToNew');
+            const [isOldToNew, setIsOldToNew] = useState(true);
             const [parts, setParts] = useState([]);
-
-            const isOldToNew = mode === 'oldToNew';
-            const numVal = parseFloat(val) || 0;
-            const result = isOldToNew ? (numVal / 100) : (numVal * 100);
-            const amountInNew = isOldToNew ? result : numVal;
+            const [leftover, setLeftover] = useState(0);
 
             useEffect(() => {
-                let current = amountInNew;
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+            }, []);
+
+            const cleanNum = (str) => str.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
+            const numVal = parseFloat(cleanNum(val)) || 0;
+            const currentResult = isOldToNew ? (numVal / RATE) : (numVal * RATE);
+
+            useEffect(() => {
+                let current = isOldToNew ? currentResult : numVal;
                 const res = [];
                 if (current > 0) {
                     DENOMS.forEach(d => {
@@ -52,69 +56,49 @@
                     });
                 }
                 setParts(res);
-            }, [amountInNew]);
+                setLeftover(current);
+            }, [val, isOldToNew]);
 
             return (
-                <div className="max-w-md mx-auto p-4 space-y-4 pb-10 select-none">
-                    <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-                        <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black italic shadow-lg shadow-indigo-100">د</div>
-                        <div>
-                            <h1 className="text-lg font-black text-slate-800">دليل الليرة</h1>
-                            <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">Syrian New Lira Guide</p>
+                <div className="min-h-screen p-4 space-y-4 pb-10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg">د</div>
+                        <h1 className="text-lg font-black italic">دليل الليرة</h1>
+                    </div>
+
+                    <div className="flex p-1 bg-black/5 rounded-2xl">
+                        <button onClick={() => setIsOldToNew(true)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>قديم ← جديد</button>
+                        <button onClick={() => setIsOldToNew(false)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${!isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>جديد ← قديم</button>
+                    </div>
+
+                    <div className="tg-card rounded-3xl p-6 border border-black/5">
+                        <div className="text-[10px] font-black opacity-30 mb-2 uppercase tracking-widest">المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
+                        <input type="text" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder="0.00" className="w-full text-5xl font-black bg-transparent outline-none mb-4" />
+                        <div className="pt-4 border-t border-black/5">
+                            <div className="text-[10px] font-black opacity-30 uppercase">المعادل ({!isOldToNew ? 'قديم' : 'جديد'})</div>
+                            <div className="text-3xl font-black text-indigo-500">{currentResult.toLocaleString('ar-SY')}</div>
                         </div>
                     </div>
 
-                    <div className="flex p-1.5 bg-slate-200/50 rounded-2xl">
-                        <button onClick={() => setMode('oldToNew')} className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${isOldToNew ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>قديم ← جديد</button>
-                        <button onClick={() => setMode('newToOld')} className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${!isOldToNew ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>جديد ← قديم</button>
+                    <div className="space-y-2">
+                        <h2 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">توزيع الفئات النقدية</h2>
+                        {parts.map(p => (
+                            <div key={p.v} className="tg-card p-4 rounded-2xl flex items-center justify-between border border-black/5">
+                                <div className="flex items-center gap-3"><span className="text-2xl">{p.s}</span><span className="font-black text-lg">{p.v}</span></div>
+                                <div className="tg-button px-4 py-1.5 rounded-lg font-black text-lg">×{p.count}</div>
+                            </div>
+                        ))}
                     </div>
 
-                    <div className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/50 border border-white">
-                        <label className="text-[10px] font-black text-slate-400 uppercase mb-4 block tracking-tighter">أدخل المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</label>
-                        <input 
-                            type="number" 
-                            inputMode="decimal"
-                            value={val} 
-                            onChange={(e) => setVal(e.target.value)} 
-                            placeholder="0.00" 
-                            className="w-full text-5xl font-black outline-none text-slate-900 placeholder:text-slate-100 bg-transparent mb-6 text-left"
-                        />
-                        <div className="pt-6 border-t-2 border-slate-50 flex justify-between items-end">
-                            <div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">المعادل الصافي</span>
-                                <span className="text-4xl font-black text-indigo-600">{result.toLocaleString()}</span>
-                            </div>
-                            <span className="text-xs font-black text-slate-300 italic mb-1">{!isOldToNew ? 'ل.س قديمة' : 'ليرة جديدة'}</span>
+                    {leftover > 0 && (
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-bold">
+                            ⚠️ ملاحظة: بقي {leftover} ليرة جديدة، تدفعها بقيمة {Math.round(leftover * 100)} ل.س قديمة.
                         </div>
-                    </div>
-
-                    <div className="bg-white rounded-[2.5rem] p-6 shadow-lg border border-slate-50">
-                        <h2 className="text-xs font-black text-slate-800 uppercase mb-6">توزيع الفئات النقدية</h2>
-                        {parts.length > 0 ? (
-                            <div className="space-y-3">
-                                {parts.map(p => (
-                                    <div key={p.v} className="bg-slate-50 p-4 rounded-2xl flex items-center justify-between border border-slate-100">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">{p.s}</div>
-                                            <div>
-                                                <div className="text-lg font-black text-slate-900">{p.v}</div>
-                                                <div className="text-[10px] font-bold text-indigo-600 uppercase">{p.n}</div>
-                                            </div>
-                                        </div>
-                                        <div className="bg-slate-900 text-white px-4 py-1.5 rounded-xl text-xl font-black">×{p.count}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="py-10 text-center text-slate-300 text-[10px] font-bold tracking-widest uppercase">بانتظار المبلغ...</div>
-                        )}
-                    </div>
+                    )}
                 </div>
             );
         }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>

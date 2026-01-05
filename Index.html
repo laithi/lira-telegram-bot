@@ -3,60 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>دليل الليرة - العمل بدون إنترنت</title>
+    <title>دليل الليرة - Mini App</title>
+    
     <!-- Telegram SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- React & Tailwind (تستخدم من CDN، في النسخ المتقدمة يفضل تحميلها محلياً) -->
+    
+    <!-- React & Tailwind -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    
     <style>
-        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { background-color: var(--tg-theme-bg-color, #f8fafc); color: var(--tg-theme-text-color, #1e293b); margin: 0; padding: 0; }
-        .tg-card { background-color: var(--tg-theme-secondary-bg-color, #ffffff); }
-        .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, #ffffff); }
-        /* استايل إضافي للتنبيه بحالة عدم الاتصال */
-        .offline-badge { background: #ef4444; color: white; text-align: center; font-size: 10px; padding: 2px; display: none; }
+        * { 
+            font-family: 'Cairo', sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+        body { 
+            background-color: var(--tg-theme-bg-color, #f8fafc); 
+            color: var(--tg-theme-text-color, #1e293b); 
+            margin: 0; 
+            padding: 0;
+            overflow-x: hidden;
+        }
+        .tg-card { 
+            background-color: var(--tg-theme-secondary-bg-color, #ffffff); 
+            border-color: var(--tg-theme-hint-color, rgba(0,0,0,0.05));
+        }
+        .tg-button { 
+            background-color: var(--tg-theme-button-color, #4f46e5); 
+            color: var(--tg-theme-button-text-color, #ffffff); 
+        }
+        .tg-hint {
+            color: var(--tg-theme-hint-color, #94a3b8);
+        }
+        .tg-link {
+            color: var(--tg-theme-link-color, #4f46e5);
+        }
+        /* Offline Style */
+        .offline-badge { 
+            background: #ef4444; 
+            color: white; 
+            text-align: center; 
+            font-size: 11px; 
+            padding: 4px; 
+            display: none; 
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
         body.is-offline .offline-badge { display: block; }
+        
+        input::placeholder {
+            color: var(--tg-theme-hint-color, #cbd5e1);
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
-    <div class="offline-badge">أنت تعمل الآن بدون إنترنت (البيانات محفوظة محلياً)</div>
+    <div class="offline-badge">أنت تعمل الآن بدون إنترنت</div>
     <div id="root"></div>
 
-    <!-- Service Worker Script للعمل بدون إنترنت -->
-    <script>
-        const CACHE_NAME = 'lira-guide-v1';
-        const ASSETS = [
-            window.location.href,
-            'https://telegram.org/js/telegram-web-app.js',
-            'https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap'
-        ];
-
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                const swCode = `
-                    const CACHE_NAME = '${CACHE_NAME}';
-                    self.addEventListener('install', e => {
-                        e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(['./'])));
-                    });
-                    self.addEventListener('fetch', e => {
-                        e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
-                    });
-                `;
-                const blob = new Blob([swCode], { type: 'text/javascript' });
-                navigator.serviceWorker.register(URL.createObjectURL(blob));
-            });
-        }
-
-        window.addEventListener('offline', () => document.body.classList.add('is-offline'));
-        window.addEventListener('online', () => document.body.classList.remove('is-offline'));
-    </script>
-
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
         const RATE = 100;
         const DENOMS = [
@@ -71,89 +82,163 @@
         function App() {
             const [val, setVal] = useState('');
             const [isOldToNew, setIsOldToNew] = useState(true);
-            const [parts, setParts] = useState([]);
-            const [leftover, setLeftover] = useState(0);
+            const tg = window.Telegram.WebApp;
 
             useEffect(() => {
-                const tg = window.Telegram.WebApp;
                 tg.ready();
                 tg.expand();
+                // تعيين لون شريط الحالة ليتناسب مع الثيم
+                tg.setHeaderColor('secondary_bg_color');
             }, []);
 
             const cleanNum = (str) => {
                 const map = { "٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9" };
-                return str.replace(/[٠-٩]/g, d => map[d] || d);
+                return str.replace(/[٠-٩]/g, d => map[d] || d).replace(/[^0-9.]/g, '');
+            };
+
+            const handleModeChange = (mode) => {
+                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+                setIsOldToNew(mode);
             };
 
             const numVal = parseFloat(cleanNum(val)) || 0;
             const currentResult = isOldToNew ? (numVal / RATE) : (numVal * RATE);
-            const amountInNew = isOldToNew ? currentResult : numVal;
 
-            useEffect(() => {
-                let current = amountInNew;
+            // حساب التوزيع
+            const { parts, leftover } = useMemo(() => {
+                let current = isOldToNew ? Math.floor(currentResult) : currentResult;
                 const res = [];
-                if (current > 0) {
+                let rem = 0;
+
+                if (isOldToNew) {
+                    // التوزيع بالجديد
                     DENOMS.forEach(d => {
                         const count = Math.floor(current / d.v);
                         if (count > 0) {
                             res.push({ ...d, count });
-                            current = Math.round((current - (count * d.v)) * 100) / 100;
+                            current -= (count * d.v);
                         }
                     });
+                    // الفراطة بالقديم
+                    rem = Math.round((current * RATE) + (numVal % RATE));
+                } else {
+                    // التوزيع بالقديم (لأغراض العرض فقط، عادة نستخدم فئات الـ 5000 والـ 2000)
+                    const OLD_DENOMS = [5000, 2000, 1000, 500, 200, 100, 50];
+                    let currentOld = currentResult;
+                    OLD_DENOMS.forEach(v => {
+                        const count = Math.floor(currentOld / v);
+                        if (count > 0) {
+                            res.push({ v, n: 'فئة قديمة', s: '💴', count });
+                            currentOld -= (count * v);
+                        }
+                    });
+                    rem = Math.round(currentOld);
                 }
-                setParts(res);
-                setLeftover(current);
-            }, [amountInNew]);
+                
+                return { parts: res, leftover: rem };
+            }, [numVal, isOldToNew, currentResult]);
 
             return (
-                <div className="min-h-screen p-4 pb-10 space-y-4">
+                <div className="min-h-screen p-4 pb-12 space-y-4">
+                    {/* Header */}
                     <div className="flex items-center justify-between py-2">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg">د</div>
-                            <h1 className="text-lg font-black">دليل الليرة</h1>
+                            <div className="w-10 h-10 tg-button rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-indigo-500/20">
+                                ل
+                            </div>
+                            <div>
+                                <h1 className="text-lg font-black leading-none">دليل الليرة</h1>
+                                <span className="text-[10px] font-bold tg-hint">العملة السورية الجديدة</span>
+                            </div>
                         </div>
-                        <button onClick={() => setVal('')} className="p-2 opacity-30 text-xs font-bold uppercase">مسح</button>
+                        <button 
+                            onClick={() => {
+                                setVal('');
+                                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                            }} 
+                            className="p-2 tg-hint text-xs font-bold uppercase active:scale-95 transition-transform"
+                        >
+                            مسح
+                        </button>
                     </div>
 
-                    <div className="flex p-1 bg-black/5 rounded-2xl">
-                        <button onClick={() => setIsOldToNew(true)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>قديم ← جديد</button>
-                        <button onClick={() => setIsOldToNew(false)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${!isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>جديد ← قديم</button>
+                    {/* Switcher */}
+                    <div className="flex p-1 tg-card rounded-2xl border">
+                        <button 
+                            onClick={() => handleModeChange(true)} 
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${isOldToNew ? 'bg-indigo-600 text-white shadow-md' : 'tg-hint'}`}
+                        >
+                            قديم ← جديد
+                        </button>
+                        <button 
+                            onClick={() => handleModeChange(false)} 
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${!isOldToNew ? 'bg-indigo-600 text-white shadow-md' : 'tg-hint'}`}
+                        >
+                            جديد ← قديم
+                        </button>
                     </div>
 
-                    <div className="tg-card rounded-3xl p-6 border border-black/5">
-                        <div className="text-[10px] font-black opacity-30 mb-2 uppercase tracking-widest">المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
+                    {/* Input Card */}
+                    <div className="tg-card rounded-3xl p-6 border shadow-sm">
+                        <div className="text-[10px] font-black tg-hint mb-2 uppercase tracking-widest">
+                            المبلغ ({isOldToNew ? 'بالقديم' : 'بالجديد'})
+                        </div>
                         <input 
                             type="text" 
                             inputMode="decimal"
                             value={val}
                             onChange={(e) => setVal(e.target.value)}
                             placeholder="0.00"
-                            className="w-full text-5xl font-black bg-transparent outline-none mb-6"
+                            className="w-full text-5xl font-black bg-transparent outline-none mb-6 border-none focus:ring-0"
                         />
-                        <div className="pt-6 border-t border-black/5 flex justify-between items-end">
+                        <div className="pt-6 border-t tg-card border-dashed flex justify-between items-end">
                             <div>
-                                <div className="text-[10px] font-black opacity-30 uppercase">المعادل ({!isOldToNew ? 'قديم' : 'جديد'})</div>
-                                <div className="text-3xl font-black text-indigo-500">{currentResult.toLocaleString('ar-SY')}</div>
+                                <div className="text-[10px] font-black tg-hint uppercase">المعادل ({!isOldToNew ? 'بالقديم' : 'بالجديد'})</div>
+                                <div className="text-3xl font-black tg-link">
+                                    {currentResult.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                            <div className="text-xs font-bold tg-hint">
+                                {isOldToNew ? 'ليرة جديدة' : 'ليرة قديمة'}
                             </div>
                         </div>
                     </div>
 
+                    {/* Distribution List */}
                     <div className="space-y-2">
-                        <h2 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">توزيع الفئات النقدية</h2>
-                        {parts.map(p => (
-                            <div key={p.v} className="tg-card p-4 rounded-2xl flex items-center justify-between border border-black/5">
+                        <h2 className="text-[10px] font-black tg-hint px-2 uppercase tracking-widest">توزيع الفئات النقدية</h2>
+                        {parts.length === 0 && (
+                            <div className="text-center py-8 tg-hint text-sm font-bold opacity-50">
+                                أدخل مبلغاً لعرض التوزيع
+                            </div>
+                        )}
+                        {parts.map((p, idx) => (
+                            <div key={idx} className="tg-card p-4 rounded-2xl flex items-center justify-between border shadow-sm active:scale-[0.98] transition-transform">
                                 <div className="flex items-center gap-3">
                                     <span className="text-2xl">{p.s}</span>
-                                    <span className="font-black text-lg">{p.v}</span>
+                                    <div>
+                                        <div className="font-black text-lg leading-none">{p.v.toLocaleString()}</div>
+                                        <div className="text-[10px] font-bold tg-hint">{p.n}</div>
+                                    </div>
                                 </div>
-                                <div className="tg-button px-4 py-1.5 rounded-lg font-black text-lg">×{p.count}</div>
+                                <div className="tg-button px-4 py-1.5 rounded-xl font-black text-lg shadow-sm">
+                                    ×{p.count}
+                                </div>
                             </div>
                         ))}
                     </div>
 
+                    {/* Change / Leftover */}
                     {leftover > 0 && (
-                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-bold leading-relaxed">
-                            ⚠️ ملاحظة: بقي {leftover} ليرة جديدة، تدفعها بقيمة {Math.round(leftover * 100)} ل.س قديمة.
+                        <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-bold leading-relaxed flex gap-3">
+                            <span className="text-lg">⚠️</span>
+                            <div>
+                                {isOldToNew ? (
+                                    <span>بقي <b>{leftover}</b> ليرة قديمة تدفع كفكة (لأنها لم تكتمل ليرة جديدة).</span>
+                                ) : (
+                                    <span>بقي <b>{leftover}</b> ليرة قديمة (تعادل { (leftover/RATE).toFixed(2) } من الجديد).</span>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -162,6 +247,10 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+
+        // Offline logic
+        window.addEventListener('offline', () => document.body.classList.add('is-offline'));
+        window.addEventListener('online', () => document.body.classList.remove('is-offline'));
     </script>
 </body>
 </html>

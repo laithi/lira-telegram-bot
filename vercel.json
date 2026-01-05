@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "framework": null,
   "rewrites": [
     {
       "source": "/api/bot",
@@ -10,10 +9,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "app/telegram.js": {
-      "runtime": "vercel-node@latest"
-    }
-  }
+  ]
 }

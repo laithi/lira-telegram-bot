@@ -1,8 +1,7 @@
 {
+  "version": 2,
   "rewrites": [
-    {
-      "source": "/api/bot",
-      "destination": "/api/telegram.js"
-    }
+    { "source": "/api/bot", "destination": "/app/telegram.js" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

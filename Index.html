@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>دليل الليرة - العمل بدون إنترنت</title>
+    <!-- Telegram SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- React & Tailwind (تستخدم من CDN، في النسخ المتقدمة يفضل تحميلها محلياً) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--tg-theme-bg-color, #f8fafc); color: var(--tg-theme-text-color, #1e293b); margin: 0; padding: 0; }
+        .tg-card { background-color: var(--tg-theme-secondary-bg-color, #ffffff); }
+        .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, #ffffff); }
+        /* استايل إضافي للتنبيه بحالة عدم الاتصال */
+        .offline-badge { background: #ef4444; color: white; text-align: center; font-size: 10px; padding: 2px; display: none; }
+        body.is-offline .offline-badge { display: block; }
+    </style>
+</head>
+<body>
+    <div class="offline-badge">أنت تعمل الآن بدون إنترنت (البيانات محفوظة محلياً)</div>
+    <div id="root"></div>
+
+    <!-- Service Worker Script للعمل بدون إنترنت -->
+    <script>
+        const CACHE_NAME = 'lira-guide-v1';
+        const ASSETS = [
+            window.location.href,
+            'https://telegram.org/js/telegram-web-app.js',
+            'https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap'
+        ];
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                const swCode = `
+                    const CACHE_NAME = '${CACHE_NAME}';
+                    self.addEventListener('install', e => {
+                        e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(['./'])));
+                    });
+                    self.addEventListener('fetch', e => {
+                        e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
+                    });
+                `;
+                const blob = new Blob([swCode], { type: 'text/javascript' });
+                navigator.serviceWorker.register(URL.createObjectURL(blob));
+            });
+        }
+
+        window.addEventListener('offline', () => document.body.classList.add('is-offline'));
+        window.addEventListener('online', () => document.body.classList.remove('is-offline'));
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const RATE = 100;
+        const DENOMS = [
+            { v: 500, n: 'سنابل القمح', s: '🌾' },
+            { v: 200, n: 'أغصان الزيتون', s: '🫒' },
+            { v: 100, n: 'القطن السوري', s: '☁️' },
+            { v: 50, n: 'الحمضيات', s: '🍊' },
+            { v: 25, n: 'العنب', s: '🍇' },
+            { v: 10, n: 'ياسمين الشام', s: '🌼' }
+        ];
+
+        function App() {
+            const [val, setVal] = useState('');
+            const [isOldToNew, setIsOldToNew] = useState(true);
+            const [parts, setParts] = useState([]);
+            const [leftover, setLeftover] = useState(0);
+
+            useEffect(() => {
+                const tg = window.Telegram.WebApp;
+                tg.ready();
+                tg.expand();
+            }, []);
+
+            const cleanNum = (str) => {
+                const map = { "٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9" };
+                return str.replace(/[٠-٩]/g, d => map[d] || d);
+            };
+
+            const numVal = parseFloat(cleanNum(val)) || 0;
+            const currentResult = isOldToNew ? (numVal / RATE) : (numVal * RATE);
+            const amountInNew = isOldToNew ? currentResult : numVal;
+
+            useEffect(() => {
+                let current = amountInNew;
+                const res = [];
+                if (current > 0) {
+                    DENOMS.forEach(d => {
+                        const count = Math.floor(current / d.v);
+                        if (count > 0) {
+                            res.push({ ...d, count });
+                            current = Math.round((current - (count * d.v)) * 100) / 100;
+                        }
+                    });
+                }
+                setParts(res);
+                setLeftover(current);
+            }, [amountInNew]);
+
+            return (
+                <div className="min-h-screen p-4 pb-10 space-y-4">
+                    <div className="flex items-center justify-between py-2">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg">د</div>
+                            <h1 className="text-lg font-black">دليل الليرة</h1>
+                        </div>
+                        <button onClick={() => setVal('')} className="p-2 opacity-30 text-xs font-bold uppercase">مسح</button>
+                    </div>
+
+                    <div className="flex p-1 bg-black/5 rounded-2xl">
+                        <button onClick={() => setIsOldToNew(true)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>قديم ← جديد</button>
+                        <button onClick={() => setIsOldToNew(false)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${!isOldToNew ? 'bg-white shadow text-indigo-600' : 'opacity-40'}`}>جديد ← قديم</button>
+                    </div>
+
+                    <div className="tg-card rounded-3xl p-6 border border-black/5">
+                        <div className="text-[10px] font-black opacity-30 mb-2 uppercase tracking-widest">المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
+                        <input 
+                            type="text" 
+                            inputMode="decimal"
+                            value={val}
+                            onChange={(e) => setVal(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full text-5xl font-black bg-transparent outline-none mb-6"
+                        />
+                        <div className="pt-6 border-t border-black/5 flex justify-between items-end">
+                            <div>
+                                <div className="text-[10px] font-black opacity-30 uppercase">المعادل ({!isOldToNew ? 'قديم' : 'جديد'})</div>
+                                <div className="text-3xl font-black text-indigo-500">{currentResult.toLocaleString('ar-SY')}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <h2 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">توزيع الفئات النقدية</h2>
+                        {parts.map(p => (
+                            <div key={p.v} className="tg-card p-4 rounded-2xl flex items-center justify-between border border-black/5">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-2xl">{p.s}</span>
+                                    <span className="font-black text-lg">{p.v}</span>
+                                </div>
+                                <div className="tg-button px-4 py-1.5 rounded-lg font-black text-lg">×{p.count}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {leftover > 0 && (
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-bold leading-relaxed">
+                            ⚠️ ملاحظة: بقي {leftover} ليرة جديدة، تدفعها بقيمة {Math.round(leftover * 100)} ل.س قديمة.
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

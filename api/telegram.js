@@ -2,12 +2,15 @@ import { Telegraf, Markup } from "telegraf";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
+// استخدم رابطك المباشر هنا إذا لم يعمل الرابط التلقائي
+const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
+
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- بيانات الفئات (بالأسماء الدقيقة) ---
+// --- البيانات ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: 'سنابل القمح', en: 'Wheat' }, s: '🌾' },
   { v: 200, n: { ar: 'الزيتون', en: 'Olive' }, s: '🫒' },
@@ -31,36 +34,83 @@ function getUS(id) {
   return userStates.get(id);
 }
 
-// --- لوحة المفاتيح (التنسيق المطلوب) ---
+// --- النصوص ---
+const strings = {
+  ar: {
+    welcome: "أهلاً بك في دليل الليرة. اختر الإعدادات أو أرسل رقماً للحساب:",
+    btnAr: "العربية",
+    btnEn: "English",
+    btnOldNew: "من قديم لجديد",
+    btnNewOld: "من جديد لقديم",
+    openApp: "📱 فتح التطبيق المصغر",
+    input: "المبلغ المدخل",
+    output: "الصافي المعادل",
+    distHeader: "توزيع الفئات النقدية",
+    distSub: "حسب فئات الإصدار",
+    new: "الجديد",
+    old: "القديم",
+    noteTitle: "ملاحظة الفراطة",
+    noteBody: "بقي {rem}، تدفعها بـ: ({val}).",
+    currNew: "ليرة جديدة",
+    currOld: "ل.س قديمة",
+    retry: "أرسل مبلغاً آخر للحساب."
+  },
+  en: {
+    welcome: "Welcome. Choose settings or send a number:",
+    btnAr: "Arabic",
+    btnEn: "English",
+    btnOldNew: "Old to New",
+    btnNewOld: "New to Old",
+    openApp: "📱 Open Mini App",
+    input: "Input Amount",
+    output: "Equivalent",
+    distHeader: "Banknote Distribution",
+    distSub: "Based on issuance",
+    new: "New",
+    old: "Old",
+    noteTitle: "Small Change Note",
+    noteBody: "{rem} left, pay as: ({val}).",
+    currNew: "New Lira",
+    currOld: "Old SYP",
+    retry: "Send another number."
+  }
+};
+
+// --- لوحة المفاتيح (ثابتة الأماكن) ---
 function getKeyboard(id) {
   const s = getUS(id);
+  const t = strings[s.lang];
   const isAr = s.lang === 'ar';
   const isOldToNew = s.mode === 'oldToNew';
   
   return Markup.inlineKeyboard([
+    // صف اللغة: العربية دائماً يمين، الإنجليزية يسار
     [
       Markup.button.callback(isAr ? "✅ العربية" : "العربية", "setLang:ar"),
-      Markup.button.callback(!isAr ? "✅ EN" : "EN", "setLang:en")
+      Markup.button.callback(!isAr ? "✅ English" : "English", "setLang:en")
     ],
+    // صف التحويل: ثابت الأماكن
     [
-      Markup.button.callback(isOldToNew ? "✅ من قديم لجديد" : "من قديم لجديد", "setMode:oldToNew"),
-      Markup.button.callback(!isOldToNew ? "✅ من جديد لقديم" : "من جديد لقديم", "setMode:newToOld")
+      Markup.button.callback(isOldToNew ? `✅ ${t.btnOldNew}` : t.btnOldNew, "setMode:oldToNew"),
+      Markup.button.callback(!isOldToNew ? `✅ ${t.btnNewOld}` : t.btnNewOld, "setMode:newToOld")
     ],
+    // زر التطبيق
     [
-      Markup.button.webApp("📱 فتح التطبيق المصغر", `https://${process.env.VERCEL_URL || 'lira-telegram-bot.vercel.app'}`)
+      Markup.button.webApp(t.openApp, APP_URL)
     ]
   ]);
 }
 
 // --- معالجات البوت ---
 bot.start((ctx) => {
-  ctx.reply("أهلاً بك في دليل الليرة. اختر الإعدادات أو أرسل رقماً للحساب:", getKeyboard(ctx.from.id));
+  const s = getUS(ctx.from.id);
+  ctx.reply(strings[s.lang].welcome, getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, (ctx) => {
   const s = getUS(ctx.from.id);
   s.lang = ctx.match[1];
-  ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  ctx.editMessageText(strings[s.lang].welcome, { parse_mode: 'Markdown', ...getKeyboard(ctx.from.id) });
 });
 
 bot.action(/setMode:(.*)/, (ctx) => {
@@ -71,68 +121,62 @@ bot.action(/setMode:(.*)/, (ctx) => {
 
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
-  // تنظيف الأرقام
+  const t = strings[s.lang];
   const text = ctx.message.text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d).replace(/,/g, '');
   const amount = parseFloat(text);
   
-  if (isNaN(amount)) return; // تجاهل النصوص غير الرقمية
+  if (isNaN(amount)) return;
 
   const isOldToNew = s.mode === 'oldToNew';
   const resVal = isOldToNew ? (amount / RATE) : (amount * RATE);
   
-  // تحديد الفئات للتوزيع
-  // إذا قديم لجديد -> نوزع الناتج (الجديد) بفئات الجديد
-  // إذا جديد لقديم -> نوزع الناتج (القديم) بفئات القديم
+  // منطق التوزيع
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-  let remaining = resVal;
+  // التوزيع دائماً للناتج (العملة التي سيقبضها أو يدفعها الشخص)
+  const calcAmount = isOldToNew ? resVal : resVal; 
   
-  // بناء نص التوزيع
+  let remaining = calcAmount;
   let distText = "";
+  
   activeDenoms.forEach(d => {
     const count = Math.floor(remaining / d.v);
     if (count > 0) {
-      // التنسيق: 50 - الحمضيات × 1
       distText += `${d.v} - ${d.n[s.lang]} × ${count}\n`;
       remaining = Math.round((remaining - (count * d.v)) * 100) / 100;
     }
   });
 
-  // تحديد الوحدات
-  const inUnit = isOldToNew ? "ل.س قديمة" : "ليرة جديدة";
-  const outUnit = isOldToNew ? "ليرة جديدة" : "ل.س قديمة";
+  const inUnit = isOldToNew ? t.currOld : t.currNew;
+  const outUnit = isOldToNew ? t.currNew : t.currOld;
 
-  // بناء الرسالة النهائية (بالضبط كما طلبت)
-  let msg = `*دليل الليرة*\n`;
-  msg += `_دليل العملة السورية الجديدة_\n\n`;
+  // بناء الرسالة بدقة حسب الطلب
+  let msg = `*${t.title || (s.lang==='ar'?'دليل الليرة':'Lira Guide')}*\n`;
+  msg += `_${t.subtitle || (s.lang==='ar'?'دليل العملة السورية الجديدة':'Syrian New Currency Guide')}_\n\n`;
   
-  msg += `• المبلغ المدخل: *${amount.toLocaleString()}* ${inUnit}\n`;
-  msg += `• الصافي المعادل: *${resVal.toLocaleString()}* ${outUnit}\n\n`;
+  msg += `• ${t.input}: *${amount.toLocaleString()}* ${inUnit}\n`;
+  msg += `• ${t.output}: *${resVal.toLocaleString()}* ${outUnit}\n\n`;
   
-  msg += `*توزيع الفئات النقدية*\n`;
-  msg += `_حسب فئات الإصدار ${isOldToNew ? 'الجديد' : 'القديم'}_\n`;
-  msg += `${distText || "— لا يوجد فئات مناسبة\n"}`;
+  msg += `*${t.distHeader}*\n`;
+  msg += `_${t.distSub} ${isOldToNew ? t.new : t.old}_\n\n`;
+  msg += `${distText || "—"}\n`;
   
-  msg += `.\n`; // النقطة الفاصلة كما في الصورة
+  msg += `.\n\n`; // النقطة الفاصلة
 
   if (remaining > 0) {
     const payAs = isOldToNew ? Math.round(remaining * RATE) : (remaining / RATE).toFixed(2);
-    const payUnit = isOldToNew ? "ل.س" : "ليرة جديدة";
-    const remUnit = isOldToNew ? "ليرة جديدة" : "ل.س قديمة";
+    const payUnit = isOldToNew ? t.currOld : t.currNew;
+    const remUnit = isOldToNew ? t.currNew : t.currOld;
     
-    msg += `*ملاحظة الفراطة* ⚠️\n`;
-    msg += `بقي *${remaining.toLocaleString()}* ${remUnit}، تدفعها بال${isOldToNew ? 'قديم' : 'جديد'}: (*${payAs}* ${payUnit}).\n\n`;
-  } else {
-    msg += `\n`;
+    msg += `*${t.noteTitle}* ⚠️\n`;
+    msg += `بقي *${remaining.toLocaleString()}* ${remUnit}، تدفعها بـ: (*${payAs}* ${payUnit}).\n\n`;
   }
 
-  msg += `_أرسل مبلغاً آخر للحساب._`;
+  msg += `_${t.retry}_`;
 
   await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
-
-// --- كود الواجهة (Mini App) ---
-// تم دمجه هنا لضمان عمله عند فتح الرابط
+// --- كود الواجهة (Mini App HTML) ---
 const HTML_PAGE = `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -149,7 +193,6 @@ const HTML_PAGE = `
     <style>
         * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background-color: #fff7ed; color: #431407; margin: 0; }
-        .btn-orange { background-color: #ea580c; color: white; }
     </style>
 </head>
 <body>
@@ -181,18 +224,21 @@ const HTML_PAGE = `
                }
             }, []);
 
-            const numVal = parseFloat(val.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d)) || 0;
+            // تحويل الأرقام العربية
+            const cleanNum = (str) => str.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
+            const numVal = parseFloat(cleanNum(val)) || 0;
             const resVal = isOldToNew ? (numVal / 100) : (numVal * 100);
 
             useEffect(() => {
                 const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-                // عند التحويل من جديد لقديم (مثال 500)، نريد توزيع ال 50,000 الناتجة
-                // عند التحويل من قديم لجديد (مثال 50,000)، نريد توزيع ال 500 الناتجة
+                // إذا قديم لجديد -> نوزع الناتج (الجديد)
+                // إذا جديد لقديم -> نوزع الناتج (القديم)
                 let amountToDistribute = resVal; 
                 
                 const res = [];
                 let remaining = amountToDistribute;
                 
+                // حساب التوزيع
                 if (remaining > 0) {
                     activeDenoms.forEach(d => {
                         const count = Math.floor(remaining / d.v);
@@ -222,7 +268,7 @@ const HTML_PAGE = `
                         <button onClick={() => setVal('')} className="p-3 bg-white rounded-xl shadow text-orange-400 font-bold">مسح</button>
                     </div>
 
-                    {/* Tabs */}
+                    {/* Tabs (Fixed Position Concept) */}
                     <div className="flex p-1 bg-orange-100 rounded-2xl mb-6">
                         <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-3 rounded-xl text-xs font-black transition-all " + (isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من قديم لجديد</button>
                         <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-3 rounded-xl text-xs font-black transition-all " + (!isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من جديد لقديم</button>
@@ -243,9 +289,9 @@ const HTML_PAGE = `
                         </div>
                     </div>
 
-                    {/* List */}
+                    {/* Breakdown */}
                     <div className="space-y-3">
-                        <h2 className="text-xs font-black text-gray-400 px-2">شلون بدي ادفعهن؟ ({isOldToNew ? 'بالجديد' : 'بالقديم'})</h2>
+                        <h2 className="text-xs font-black text-gray-400 px-2">توزيع الفئات ({isOldToNew ? 'بالجديد' : 'بالقديم'})</h2>
                         {parts.map(p => (
                             <div key={p.v} className="bg-white p-4 rounded-2xl flex items-center justify-between shadow-sm border border-orange-50">
                                 <div className="flex items-center gap-3">
@@ -260,9 +306,10 @@ const HTML_PAGE = `
                         ))}
                     </div>
 
+                    {/* Leftover Note (Fixed) */}
                     {leftover > 0 && (
                         <div className="mt-4 p-4 bg-red-50 rounded-2xl border border-red-100 text-red-800 text-xs font-bold">
-                            ⚠️ ملاحظة الفراطة: بقي {leftover.toLocaleString()}، تدفعها بال{isOldToNew ? 'قديم' : 'جديد'} ({isOldToNew ? Math.round(leftover * 100) : (leftover/100).toFixed(2)}).
+                            ⚠️ ملاحظة الفراطة: بقي {leftover.toLocaleString()}، تدفعها بـ ({isOldToNew ? Math.round(leftover * 100).toLocaleString() : (leftover/100).toFixed(2)}).
                         </div>
                     )}
                 </div>
@@ -275,13 +322,13 @@ const HTML_PAGE = `
 `;
 
 export default async function handler(req, res) {
-  // 1. GET Request -> Serve HTML (Web App)
+  // GET: Serve HTML
   if (req.method === "GET") {
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(HTML_PAGE);
   }
 
-  // 2. POST Request -> Handle Telegram Webhook
+  // POST: Webhook
   if (req.method === "POST") {
     try {
       if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) {
@@ -295,4 +342,4 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
   }
-}
+    }

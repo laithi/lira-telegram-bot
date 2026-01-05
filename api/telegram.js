@@ -9,72 +9,118 @@ const RATE = 100;
 
 // فئات الإصدار الجديد
 const DENOMS_NEW = [
-  { v: 500, n: 'سنابل القمح', s: '🌾' },
-  { v: 200, n: 'أغصان الزيتون', s: '🫒' },
-  { v: 100, n: 'القطن السوري', s: '☁️' },
-  { v: 50, n: 'الحمضيات', s: '🍊' },
-  { v: 25, n: 'العنب', s: '🍇' },
-  { v: 10, n: 'ياسمين الشام', s: '🌼' }
+  { v: 500, n: { ar: 'سنابل القمح', en: 'Wheat Ears' }, s: '🌾' },
+  { v: 200, n: { ar: 'أغصان الزيتون', en: 'Olive Branches' }, s: '🫒' },
+  { v: 100, n: { ar: 'القطن السوري', en: 'Syrian Cotton' }, s: '☁️' },
+  { v: 50, n: { ar: 'الحمضيات', en: 'Citrus' }, s: '🍊' },
+  { v: 25, n: { ar: 'العنب', en: 'Grapes' }, s: '🍇' },
+  { v: 10, n: { ar: 'ياسمين الشام', en: 'Damask Jasmine' }, s: '🌼' }
 ];
 
-// فئات الإصدار القديم
-const DENOMS_OLD = [
-  { v: 5000, n: 'فئة الخمسة آلاف', s: '💵' },
-  { v: 2000, n: 'فئة الألفين', s: '💵' },
-  { v: 1000, n: 'فئة الألف', s: '💵' },
-  { v: 500, n: 'فئة الخمسمئة', s: '💵' }
+const DENOMS_OLD_LIST = [
+  { v: 5000, n: { ar: 'فئة الخمسة آلاف', en: '5000 Note' }, s: '💵' },
+  { v: 2000, n: { ar: 'فئة الألفين', en: '2000 Note' }, s: '💵' },
+  { v: 1000, n: { ar: 'فئة الألف', en: '1000 Note' }, s: '💵' }
 ];
 
-// دالة لحساب توزيع الفئات (تستخدم في البوت والواجهة)
-function calculateDistribution(amount, denoms) {
-  let remaining = amount;
-  const result = [];
-  denoms.forEach(d => {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      result.push({ ...d, count });
-      remaining = Math.round((remaining - (count * d.v)) * 100) / 100;
-    }
-  });
-  return { result, remaining };
+// إدارة حالة المستخدم البسيطة (لغة ونمط تحويل)
+const userStates = new Map();
+function getUS(id) {
+  if (!userStates.has(id)) userStates.set(id, { lang: 'ar', mode: 'oldToNew' });
+  return userStates.get(id);
 }
 
-// --- منطق البوت (الدردشة) ---
+// --- النصوص ---
+const strings = {
+  ar: {
+    welcome: "أهلاً بك في دليل الليرة السورية\n\nيمكنك الحساب مباشرة هنا، أو استخدام التطبيق المصغر عبر الضغط على الزر الأزرق ↘️.\n\nالنمط الحالي: ",
+    oldToNew: "من قديم إلى جديد",
+    newToOld: "من جديد إلى قديم",
+    changeMode: "تغيير نمط التحويل",
+    changeLang: "English 🇺🇸",
+    openApp: "فتح التطبيق المصغر 📱",
+    resultMsg: "المبلغ: ",
+    equiv: "يعادل: ",
+    distNew: "توزيع الفئات الجديدة:",
+    distOld: "توزيع الفئات القديمة:",
+    unitNew: "ليرة جديدة",
+    unitOld: "ليرة قديمة"
+  },
+  en: {
+    welcome: "Welcome to Syrian Lira Guide\n\nYou can calculate here, or use the Mini App via the blue button ↘️.\n\nCurrent Mode: ",
+    oldToNew: "Old to New",
+    newToOld: "New to Old",
+    changeMode: "Change Conversion Mode",
+    changeLang: "العربية 🇸🇾",
+    openApp: "Open Mini App 📱",
+    resultMsg: "Amount: ",
+    equiv: "Equals: ",
+    distNew: "New Categories Distribution:",
+    distOld: "Old Categories Distribution:",
+    unitNew: "New Lira",
+    unitOld: "Old Lira"
+  }
+};
+
+// --- أزرار التحكم ---
+function getKeyboard(id) {
+  const s = getUS(id);
+  const t = strings[s.lang];
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(t.changeMode, 'toggleMode')],
+    [Markup.button.callback(t.changeLang, 'toggleLang')],
+    [Markup.button.webApp(t.openApp, `https://${process.env.VERCEL_URL || 'lira-telegram-bot.vercel.app'}`)]
+  ]);
+}
 
 bot.start((ctx) => {
-  return ctx.replyWithMarkdown(
-    "*أهلاً بك في دليل الليرة السورية*\n\nيمكنك الحساب مباشرة بإرسال مبلغ هنا، أو استخدام التطبيق المصغر المتطور عبر الضغط على *الزر الأزرق* الموجود أسفل يسار الشاشة بجانب صندوق المحادثة ↘️.\n\n_ملاحظة: التطبيق المصغر يعمل حتى بدون إنترنت بعد فتحه لأول مرة._",
-    Markup.keyboard([
-      [Markup.button.webApp("فتح التطبيق المصغر 📱", `https://${process.env.VERCEL_URL || 'lira-telegram-bot.vercel.app'}`)]
-    ]).resize()
-  );
+  const s = getUS(ctx.from.id);
+  const t = strings[s.lang];
+  return ctx.replyWithMarkdown(`${t.welcome} *${s.mode === 'oldToNew' ? t.oldToNew : t.newToOld}*`, getKeyboard(ctx.from.id));
+});
+
+bot.action('toggleMode', (ctx) => {
+  const s = getUS(ctx.from.id);
+  s.mode = s.mode === 'oldToNew' ? 'newToOld' : 'oldToNew';
+  const t = strings[s.lang];
+  ctx.editMessageText(`${t.welcome} *${s.mode === 'oldToNew' ? t.oldToNew : t.newToOld}*`, { parse_mode: 'Markdown', ...getKeyboard(ctx.from.id) });
+});
+
+bot.action('toggleLang', (ctx) => {
+  const s = getUS(ctx.from.id);
+  s.lang = s.lang === 'ar' ? 'en' : 'ar';
+  const t = strings[s.lang];
+  ctx.editMessageText(`${t.welcome} *${s.mode === 'oldToNew' ? t.oldToNew : t.newToOld}*`, { parse_mode: 'Markdown', ...getKeyboard(ctx.from.id) });
 });
 
 bot.on("text", async (ctx) => {
+  const s = getUS(ctx.from.id);
+  const t = strings[s.lang];
   const text = ctx.message.text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
   const amount = parseFloat(text);
   if (isNaN(amount)) return;
 
-  const resVal = amount / RATE;
-  const { result, remaining } = calculateDistribution(resVal, DENOMS_NEW);
+  const isOld = s.mode === 'oldToNew';
+  const resVal = isOld ? (amount / RATE) : (amount * RATE);
+  const activeDenoms = isOld ? DENOMS_NEW : DENOMS_OLD_LIST;
 
-  let response = `المبلغ بالقديم: *${amount.toLocaleString()}*\n`;
-  response += `يعادل بالجديد: *${resVal.toLocaleString()}* ليرة.\n\n`;
-  response += `*توزيع الفئات الجديدة:*\n`;
-  
-  result.forEach(p => {
-    response += `${p.s} ${p.v} ← *${p.count}* قطع\n`;
+  let msg = `• ${t.resultMsg} *${amount.toLocaleString()}*\n`;
+  msg += `• ${t.equiv} *${resVal.toLocaleString()}* ${isOld ? t.unitNew : t.unitOld}\n\n`;
+  msg += `*${isOld ? t.distNew : t.distOld}*\n`;
+
+  let remaining = resVal;
+  activeDenoms.forEach(d => {
+    const count = Math.floor(remaining / d.v);
+    if (count > 0) {
+      msg += `${d.s} ${d.v} ← *${count}* ${s.lang === 'ar' ? 'قطع' : 'pcs'}\n`;
+      remaining = Math.round((remaining - (count * d.v)) * 100) / 100;
+    }
   });
 
-  if (remaining > 0) {
-    response += `\n⚠️ بقي فراطة: ${remaining} ليرة جديدة.`;
-  }
-
-  await ctx.replyWithMarkdown(response);
+  await ctx.replyWithMarkdown(msg);
 });
 
-// --- الواجهة (HTML) ---
-
+// --- الدالة الأساسية (API Handler) ---
 export default async function handler(req, res) {
   if (req.method === "GET") {
     res.setHeader('Content-Type', 'text/html');
@@ -103,7 +149,7 @@ export default async function handler(req, res) {
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                const swCode = "self.addEventListener('install', e => e.waitUntil(caches.open('v3').then(c => c.addAll(['./'])))); self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(r => r || fetch(e.request))));";
+                const swCode = "self.addEventListener('install', e => e.waitUntil(caches.open('v4').then(c => c.addAll(['./'])))); self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(r => r || fetch(e.request))));";
                 const blob = new Blob([swCode], { type: 'text/javascript' });
                 navigator.serviceWorker.register(URL.createObjectURL(blob));
             });
@@ -112,13 +158,12 @@ export default async function handler(req, res) {
     <script type="text/babel">
         const { useState, useEffect } = React;
         const DENOMS_NEW = ${JSON.stringify(DENOMS_NEW)};
-        const DENOMS_OLD = ${JSON.stringify(DENOMS_OLD)};
+        const DENOMS_OLD = ${JSON.stringify(DENOMS_OLD_LIST)};
 
         function App() {
             const [val, setVal] = useState('');
             const [isOldToNew, setIsOldToNew] = useState(true);
             const [parts, setParts] = useState([]);
-            const [leftover, setLeftover] = useState(0);
 
             useEffect(() => { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }, []);
 
@@ -140,42 +185,39 @@ export default async function handler(req, res) {
                     });
                 }
                 setParts(res);
-                setLeftover(remaining);
             }, [val, isOldToNew]);
 
             return (
                 <div className="min-h-screen p-4 space-y-4 pb-12">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-sm shadow-lg">د</div>
+                        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black shadow-lg">د</div>
                         <h1 className="font-black text-lg uppercase tracking-tighter">دليل الليرة</h1>
                     </div>
 
                     <div className="flex p-1 bg-black/5 rounded-2xl">
-                        <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-2.5 rounded-xl text-xs font-bold transition-all " + (isOldToNew ? "bg-white shadow text-indigo-600" : "opacity-40")}>قديم ← جديد</button>
-                        <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-2.5 rounded-xl text-xs font-bold transition-all " + (!isOldToNew ? "bg-white shadow text-indigo-600" : "opacity-40")}>جديد ← قديم</button>
+                        <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-2 rounded-xl text-xs font-bold transition-all " + (isOldToNew ? "bg-white shadow text-indigo-600" : "opacity-40")}>قديم ← جديد</button>
+                        <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-2 rounded-xl text-xs font-bold transition-all " + (!isOldToNew ? "bg-white shadow text-indigo-600" : "opacity-40")}>جديد ← قديم</button>
                     </div>
 
                     <div className="tg-card rounded-[2rem] p-6 border border-black/5 shadow-sm text-center">
                         <div className="text-[10px] font-black opacity-30 mb-2 uppercase tracking-widest">المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
                         <input type="text" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder="0" className="w-full text-5xl font-black bg-transparent outline-none text-center mb-4" />
                         <div className="pt-4 border-t border-black/5">
-                            <div className="text-[10px] font-black opacity-30 mb-1 uppercase text-indigo-400">الصافي المعادل</div>
                             <div className="text-3xl font-black text-indigo-500">{resVal.toLocaleString('ar-SY')}</div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
-                        <h2 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">توزيع الفئات النقدية ({isOldToNew ? 'جديد' : 'قديم'})</h2>
                         {parts.map(p => (
                             <div key={p.v} className="tg-card p-4 rounded-2xl flex items-center justify-between border border-black/5 shadow-sm">
                                 <div className="flex items-center gap-4">
                                     <div className="text-2xl">{p.s}</div>
                                     <div>
                                         <div className="font-black text-lg leading-tight">{p.v.toLocaleString()}</div>
-                                        <div className="text-[10px] font-bold opacity-40">{p.n}</div>
+                                        <div className="text-[10px] font-bold opacity-40">{p.n.ar}</div>
                                     </div>
                                 </div>
-                                <div className="tg-button px-5 py-2 rounded-xl font-black text-xl shadow-sm">×{p.count}</div>
+                                <div className="tg-button px-5 py-1.5 rounded-xl font-black text-lg">×{p.count}</div>
                             </div>
                         ))}
                     </div>

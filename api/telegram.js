@@ -1,7 +1,7 @@
-
 import { Telegraf, Markup } from "telegraf";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -198,6 +198,14 @@ bot.on("text", async (ctx) => {
 // ---- Vercel webhook handler ----
 export default async function handler(req, res) {
   try {
+    // Security: accept requests only from Telegram (secret token header)
+    if (TELEGRAM_SECRET) {
+      const incoming = req.headers["x-telegram-bot-api-secret-token"];
+      if (incoming !== TELEGRAM_SECRET) {
+        return res.status(401).send("unauthorized");
+      }
+    }
+
     await bot.handleUpdate(req.body);
     res.status(200).send("ok");
   } catch (e) {

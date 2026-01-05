@@ -5,14 +5,14 @@
       "maxDuration": 10
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/index.html"
+      "src": "/api/(.*)",
+      "dest": "/api/telegram.js"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api/telegram.js"
+      "src": "/",
+      "dest": "/index.html"
     }
   ]
 }

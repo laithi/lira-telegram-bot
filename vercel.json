@@ -1,8 +1,13 @@
-
 {
-  "functions": {
-    "api/telegram.js": {
-      "maxDuration": 10
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/bot.js"
+    },
+    {
+      "source": "/",
+      "destination": "/index.html"
     }
-  }
+  ]
 }

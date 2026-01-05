@@ -6,16 +6,27 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ---- Data (from your app) ----
+// ---- Denoms ----
 const JASMINE_IMG = "https://cdn-icons-png.flaticon.com/512/5075/5075794.png";
 
-const DENOMS = [
+// NEW (الجديد)
+const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل القمح", en: "Wheat Ears" }, s: "🌾", img: null },
   { v: 200, n: { ar: "أغصان الزيتون", en: "Olive Branches" }, s: "🫒", img: null },
   { v: 100, n: { ar: "القطن السوري", en: "Syrian Cotton" }, s: "☁️", img: null },
   { v: 50, n: { ar: "الحمضيات", en: "Citrus" }, s: "🍊", img: null },
   { v: 25, n: { ar: "العنب", en: "Grapes" }, s: "🍇", img: null },
   { v: 10, n: { ar: "ياسمين الشام", en: "Damask Jasmine" }, s: null, img: JASMINE_IMG }
+];
+
+// OLD (القديم) — حسب قائمتك (مرتبة تنازلياً)
+const DENOMS_OLD = [
+  { v: 5000, n: { ar: "5000 قديم", en: "5000 Old" }, s: "💴", img: null },
+  { v: 2000, n: { ar: "2000 قديم", en: "2000 Old" }, s: "💴", img: null },
+  { v: 1000, n: { ar: "1000 قديم", en: "1000 Old" }, s: "💴", img: null },
+  { v: 200, n: { ar: "200 قديم", en: "200 Old" }, s: "💴", img: null },
+  { v: 100, n: { ar: "100 قديم", en: "100 Old" }, s: "💴", img: null },
+  { v: 50, n: { ar: "50 قديم", en: "50 Old" }, s: "💴", img: null }
 ];
 
 const TRANSLATIONS = {
@@ -27,8 +38,11 @@ const TRANSLATIONS = {
     enterAmount: "أرسل المبلغ",
     result: "الناتج",
     howToPay: "توزيع الفئات النقدية",
+    denomsNewLabel: "التوزيع حسب فئات الجديد",
+    denomsOldLabel: "التوزيع حسب فئات القديم",
     changeNote: "ملاحظة الفراطة",
-    changeDesc: "بقي {leftover} ليرة جديدة، تدفعها بالقديم: ({oldAmount} ل.س).",
+    changeDescOldToNew: "بقي {leftover} ليرة جديدة، تدفعها بالقديم: ({other} ل.س).",
+    changeDescNewToOld: "بقي {leftover} ل.س قديمة، تدفعها بالجديد: ({other} ليرة جديدة).",
     unitOld: "ل.س قديمة",
     unitNew: "ليرة جديدة",
     help: "اكتب رقم (مثال: 50000 أو ١٠٠٠٠٠٠).",
@@ -43,8 +57,11 @@ const TRANSLATIONS = {
     enterAmount: "Send amount",
     result: "Result",
     howToPay: "Banknote distribution",
+    denomsNewLabel: "Breakdown (New notes)",
+    denomsOldLabel: "Breakdown (Old notes)",
     changeNote: "Small change",
-    changeDesc: "{leftover} New leftover, pay in Old: ({oldAmount} SYP).",
+    changeDescOldToNew: "{leftover} New leftover, pay in Old: ({other} SYP).",
+    changeDescNewToOld: "{leftover} Old leftover, pay in New: ({other} New).",
     unitOld: "Old SYP",
     unitNew: "New Lira",
     help: "Send a number (e.g., 50000).",
@@ -55,7 +72,6 @@ const TRANSLATIONS = {
 
 // ---- Simple per-user state (MVP) ----
 const userState = new Map(); // userId -> { lang, mode }
-
 function getState(userId) {
   if (!userState.has(userId)) userState.set(userId, { lang: "ar", mode: "oldToNew" });
   return userState.get(userId);
@@ -75,16 +91,32 @@ function parseAmount(text) {
   return n;
 }
 
+function nfFor(lang) {
+  return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 });
+}
+
+// معامل التحويل: 100 قديم = 1 جديد
+const RATE = 100;
+
+/**
+ * mode:
+ * - oldToNew: input OLD, output NEW, breakdown in NEW
+ * - newToOld: input NEW, output OLD, breakdown in OLD
+ */
 function calc(mode, inputAmount) {
   const isOldToNew = mode === "oldToNew";
-  const currentResult = isOldToNew ? (inputAmount / 100) : (inputAmount * 100);
-  const amountInNew = isOldToNew ? currentResult : inputAmount;
 
-  let current = amountInNew;
+  const outputAmount = isOldToNew ? (inputAmount / RATE) : (inputAmount * RATE);
+
+  // breakdown currency + denoms
+  const breakdownDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+  const breakdownAmount = isOldToNew ? outputAmount : outputAmount; // لأن output هو عملة التوزيع بكل وضع
+
+  let current = breakdownAmount;
   const parts = [];
 
   if (current > 0) {
-    for (const d of DENOMS) {
+    for (const d of breakdownDenoms) {
       const count = Math.floor(current / d.v);
       if (count > 0) {
         parts.push({ ...d, count });
@@ -93,52 +125,68 @@ function calc(mode, inputAmount) {
     }
   }
 
-  return { currentResult, amountInNew, parts, leftover: current };
+  return {
+    isOldToNew,
+    inputAmount,
+    outputAmount,
+    parts,
+    leftover: current,
+    breakdownDenoms
+  };
 }
 
-function nfFor(lang) {
-  return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 });
-}
-
-function formatReply(lang, mode, inputAmount, resultObj) {
+function formatReply(lang, mode, resultObj) {
   const t = TRANSLATIONS[lang];
   const nf = nfFor(lang);
-  const isOldToNew = mode === "oldToNew";
 
-  const inputUnit = isOldToNew ? t.unitOld : t.unitNew;
-  const outputUnit = isOldToNew ? t.unitNew : t.unitOld;
+  const inputUnit = resultObj.isOldToNew ? t.unitOld : t.unitNew;
+  const outputUnit = resultObj.isOldToNew ? t.unitNew : t.unitOld;
 
   const lines = [];
   lines.push(`*${t.title}* — _${t.subtitle}_`);
   lines.push("");
-  lines.push(`• ${t.enterAmount}: *${nf.format(inputAmount)}* ${inputUnit}`);
-  lines.push(`• ${t.result}: *${nf.format(resultObj.currentResult)}* ${outputUnit}`);
+  lines.push(`• ${t.enterAmount}: *${nf.format(resultObj.inputAmount)}* ${inputUnit}`);
+  lines.push(`• ${t.result}: *${nf.format(resultObj.outputAmount)}* ${outputUnit}`);
   lines.push("");
-  lines.push(`*${t.howToPay}* (New):`);
 
-  if (resultObj.amountInNew <= 0 || resultObj.parts.length === 0) {
+  lines.push(`*${t.howToPay}*`);
+  lines.push(`_${resultObj.isOldToNew ? t.denomsNewLabel : t.denomsOldLabel}_`);
+
+  if (resultObj.outputAmount <= 0 || resultObj.parts.length === 0) {
     lines.push(lang === "ar" ? "— لا يوجد توزيع" : "— No breakdown");
   } else {
     for (const p of resultObj.parts) {
       const icon = p.img ? "🌼" : (p.s ?? "💵");
-      lines.push(`• *${p.v}* ${icon} — ${p.n[lang]}  × *${p.count}*`);
+      lines.push(`• *${p.v}* ${icon} — ${p.n[lang]} × *${p.count}*`);
     }
   }
 
-  if (resultObj.leftover > 0 && resultObj.amountInNew > 0) {
-    const oldAmount = Math.round(resultObj.leftover * 100);
+  // Change note:
+  // oldToNew: leftover NEW -> pay in OLD (×RATE)
+  // newToOld: leftover OLD -> pay in NEW (÷RATE)
+  if (resultObj.leftover > 0 && resultObj.outputAmount > 0) {
     lines.push("");
     lines.push(`*${t.changeNote}*`);
-    lines.push(
-      t.changeDesc
-        .replace("{leftover}", nf.format(resultObj.leftover))
-        .replace("{oldAmount}", nf.format(oldAmount))
-    );
+
+    if (resultObj.isOldToNew) {
+      const other = Math.round(resultObj.leftover * RATE);
+      lines.push(
+        t.changeDescOldToNew
+          .replace("{leftover}", nf.format(resultObj.leftover))
+          .replace("{other}", nf.format(other))
+      );
+    } else {
+      const other = Math.round((resultObj.leftover / RATE) * 100) / 100;
+      lines.push(
+        t.changeDescNewToOld
+          .replace("{leftover}", nf.format(resultObj.leftover))
+          .replace("{other}", nf.format(other))
+      );
+    }
   }
 
   lines.push("");
   lines.push(lang === "ar" ? "_أرسل رقم جديد للحساب._" : "_Send another number to recalc._");
-
   return lines.join("\n");
 }
 
@@ -190,22 +238,19 @@ bot.on("text", async (ctx) => {
   if (amount === null) return ctx.reply(t.invalid);
 
   const resultObj = calc(st.mode, amount);
-  const msg = formatReply(st.lang, st.mode, amount, resultObj);
+  const msg = formatReply(st.lang, st.mode, resultObj);
 
   await ctx.replyWithMarkdown(msg, settingsKeyboard(st.lang, st.mode));
 });
 
 // ---- Vercel webhook handler (with secret token + robust body parsing) ----
 async function readJsonBody(req) {
-  // If Vercel already parsed it for us
   if (req.body && typeof req.body === "object") return req.body;
 
-  // If it came as a string
   if (typeof req.body === "string") {
     try { return JSON.parse(req.body); } catch { return null; }
   }
 
-  // Otherwise, read the stream manually
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString("utf8");
@@ -216,10 +261,8 @@ async function readJsonBody(req) {
 
 export default async function handler(req, res) {
   try {
-    // quick response for non-POST checks
     if (req.method !== "POST") return res.status(200).send("ok");
 
-    // Security: accept requests only from Telegram (secret token header)
     if (TELEGRAM_SECRET) {
       const incoming = req.headers["x-telegram-bot-api-secret-token"];
       if (incoming !== TELEGRAM_SECRET) {
@@ -236,4 +279,4 @@ export default async function handler(req, res) {
     console.error("WEBHOOK_ERROR:", e);
     return res.status(500).send("error");
   }
-}
+      }

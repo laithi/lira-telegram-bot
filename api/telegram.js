@@ -1,58 +1,54 @@
 import { Telegraf, Markup } from "telegraf";
 
+// تأكد من ضبط هذه القيم في إعدادات Vercel (Environment Variables)
 const BOT_TOKEN = process.env.BOT_TOKEN;
-// رابط الـ Mini App هو رابط الاستضافة الخاص بك على Vercel
 const WEBAPP_URL = process.env.WEBAPP_URL; 
 
-if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
+if (!BOT_TOKEN) throw new Error("BOT_TOKEN is missing!");
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// دالة لإنشاء لوحة المفاتيح المدمجة التي تظهر دائماً
-const getMainKeyboard = () => {
-  return Markup.inlineKeyboard([
-    [Markup.button.webApp("فتح التطبيق المصغر 📱", WEBAPP_URL)],
-    [
-      Markup.button.callback("🇸🇾 عربي", "lang_ar"),
-      Markup.button.callback("🇺🇸 English", "lang_en")
-    ]
-  ]);
-};
+// إنشاء زر فتح التطبيق المصغر
+const mainKeyboard = Markup.inlineKeyboard([
+  [Markup.button.webApp("فتح دليل الليرة 📱", WEBAPP_URL)],
+  [Markup.button.url("قناة التحديثات 📢", "https://t.me/SyrianLiraGuide")]
+]);
 
-// عند كتابة /start
+// الاستجابة لأمر البداية
 bot.start((ctx) => {
   return ctx.replyWithMarkdown(
-    "أهلاً بك في *دليل الليرة السورية*.\n\nيمكنك استخدام التطبيق المصغر لتجربة حسابية أفضل، أو إرسال أي مبلغ هنا مباشرة.",
-    getMainKeyboard()
+    "أهلاً بك في *دليل الليرة السورية الجديد*.\n\nاستخدم التطبيق المصغر للحصول على حسابات دقيقة وتوزيع الفئات النقدية، أو أرسل المبلغ هنا مباشرة.",
+    mainKeyboard
   );
 });
 
-// معالجة المبالغ المرسلة كنص (البوت العادي)
+// معالجة الرسائل النصية لتحويل العملة في الشات مباشرة
 bot.on("text", async (ctx) => {
-  const text = ctx.message.text.replace(/,/g, "");
-  const amount = parseFloat(text);
+  const input = ctx.message.text.replace(/,/g, "");
+  const amount = parseFloat(input);
 
   if (isNaN(amount)) {
-    return ctx.reply("الرجاء إرسال أرقام فقط (مثال: 50000) 🙏", getMainKeyboard());
+    return ctx.reply("الرجاء إرسال أرقام فقط (مثال: 5000).", mainKeyboard);
   }
 
-  // مثال سريع للحساب (100 قديم = 1 جديد)
-  const result = (amount / 100).toFixed(2);
-  
+  const result = (amount / 100).toLocaleString();
   return ctx.replyWithMarkdown(
-    `المبلغ: *${amount}* ل.س قديمة\nالمعادل: *${result}* ليرة جديدة`,
-    getMainKeyboard()
+    `المبلغ: *${amount.toLocaleString()}* ل.س قديمة\nالمعادل: *${result}* ليرة جديدة`,
+    mainKeyboard
   );
 });
 
-// التعامل مع طلبات Vercel
+// تصدير المعالج لبيئة Vercel
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).send("OK");
-  try {
-    await bot.handleUpdate(req.body);
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error");
+  if (req.method === "POST") {
+    try {
+      await bot.handleUpdate(req.body);
+      res.status(200).send("OK");
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Error");
+    }
+  } else {
+    res.status(200).send("Bot server is running.");
   }
 }

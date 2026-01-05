@@ -20,10 +20,10 @@ const DENOMS_NEW = [
 ];
 
 const DENOMS_OLD = [
-  { v: 5000, n: { ar: 'فئة 5000', en: '5000' }, s: '💵' },
-  { v: 2000, n: { ar: 'فئة 2000', en: '2000' }, s: '💵' },
-  { v: 1000, n: { ar: 'فئة 1000', en: '1000' }, s: '💵' },
-  { v: 500, n: { ar: 'فئة 500', en: '500' }, s: '💵' }
+  { v: 5000, n: { ar: 'خمسة آلاف', en: '5000' }, s: '💵' },
+  { v: 2000, n: { ar: 'ألفين', en: '2000' }, s: '💵' },
+  { v: 1000, n: { ar: 'ألف', en: '1000' }, s: '💵' },
+  { v: 500, n: { ar: 'خمسمئة', en: '500' }, s: '💵' }
 ];
 
 const userStates = new Map();
@@ -32,7 +32,7 @@ function getUS(id) {
   return userStates.get(id);
 }
 
-// --- لوحة المفاتيح ثابتة الأماكن ---
+// --- لوحة المفاتيح (أزرار ثابتة) ---
 function getKeyboard(id) {
   const s = getUS(id);
   const isAr = s.lang === 'ar';
@@ -40,12 +40,12 @@ function getKeyboard(id) {
   
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(isAr ? "✅ العربية" : "العربية", "setLang:ar"),
-      Markup.button.callback(!isAr ? "✅ English" : "English", "setLang:en")
+      Markup.button.callback(isAr ? "✅ العربية" : "ar", "setLang:ar"),
+      Markup.button.callback(!isAr ? "✅ EN" : "en", "setLang:en")
     ],
     [
-      Markup.button.callback(isOldToNew ? "✅ من قديم لجديد" : "من قديم لجديد", "setMode:oldToNew"),
-      Markup.button.callback(!isOldToNew ? "✅ من جديد لقديم" : "من جديد لقديم", "setMode:newToOld")
+      Markup.button.callback(isOldToNew ? "✅ من جديد لقديم" : "من جديد لقديم", "setMode:newToOld"),
+      Markup.button.callback(!isOldToNew ? "✅ من قديم لجديد" : "من قديم لجديد", "setMode:oldToNew")
     ],
     [
       Markup.button.webApp("📱 فتح التطبيق المصغر", APP_URL)
@@ -54,7 +54,7 @@ function getKeyboard(id) {
 }
 
 bot.start((ctx) => {
-  ctx.reply("دليل الليرة السورية\nأرسل مبلغاً للحساب أو استخدم التطبيق المصغر:", getKeyboard(ctx.from.id));
+  ctx.reply("دليل الليرة السورية\nاختر الإعدادات أو أرسل مبلغاً:", getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, (ctx) => {
@@ -89,47 +89,32 @@ bot.on("text", async (ctx) => {
     }
   });
 
+  const inUnit = isOldToNew ? "ل.س قديمة" : "ليرة جديدة";
+  const outUnit = isOldToNew ? "ليرة جديدة" : "ل.س قديمة";
+
   let msg = `*دليل الليرة*\n\n`;
-  msg += `_دليل العملة السورية الجديدة_\n\n`;
-  msg += `• المبلغ المدخل : *${amount.toLocaleString()}* ${isOldToNew ? "ل.س قديمة" : "ليرة جديدة"}\n`;
-  msg += `• الصافي المعادل: *${resVal.toLocaleString()}* ${isOldToNew ? "ليرة جديدة" : "ل.س قديمة"}\n\n`;
+  msg += `دليل العملة السورية الجديدة\n\n`;
+  msg += `• المبلغ المدخل : *${amount.toLocaleString()}* ${inUnit}\n`;
+  msg += `• الصافي المعادل: *${resVal.toLocaleString()}* ${outUnit}\n\n`;
   msg += `*توزيع الفئات النقدية*\n`;
-  msg += `_حسب فئات الإصدار ${isOldToNew ? 'الجديد' : 'القديم'}_\n\n`;
+  msg += `حسب فئات الإصدار ${isOldToNew ? 'الجديد' : 'القديم'}\n\n`;
   msg += `${distText || "—"}\n.\n\n`;
 
   if (remaining > 0) {
     const payAs = isOldToNew ? Math.round(remaining * RATE) : (remaining / RATE).toFixed(2);
+    const payUnit = isOldToNew ? "ل.س" : "ليرة جديدة";
+    const remUnit = isOldToNew ? "ليرة جديدة" : "ل.س قديمة";
+    
     msg += `*ملاحظة الفراطة*\n`;
-    msg += `بقي *${remaining}* ${isOldToNew ? "ليرة جديدة" : "ل.س قديمة"}، تدفعها بال${isOldToNew ? 'قديم' : 'جديد'} (*${payAs}* ${isOldToNew ? "ل.س" : "ليرة جديدة"}).\n\n`;
+    msg += `بقي *${remaining}* ${remUnit}، تدفعها بال${isOldToNew ? 'قديم' : 'جديد'} (*${payAs}* ${payUnit}).\n\n`;
   }
 
-  msg += `_أرسل مبلغاً آخر للحساب._`;
+  msg += `أرسل مبلغاً آخر للحساب.`;
+
   await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
-// --- Service Worker Logic ---
-const SW_CODE = `
-const CACHE_NAME = 'lira-offline-v1';
-const ASSETS = [
-  '/',
-  'https://telegram.org/js/telegram-web-app.js',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap'
-];
-
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
-});
-
-self.addEventListener('fetch', (e) => {
-  e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
-});
-`;
-
-// --- واجهة التطبيق المصغر ---
+// --- الواجهة مع دمج المانيفست والخدمة السحابية للأوفلاين ---
 const HTML_PAGE = `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -137,7 +122,8 @@ const HTML_PAGE = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ليرتي</title>
-    <link rel="manifest" href="data:application/manifest+json,{'name':'Lira','short_name':'Lira','start_url':'/','display':'standalone'}">
+    <!-- دمج المانيفست هنا مباشرة -->
+    <link rel="manifest" href='data:application/manifest+json,{"name":"Lira","short_name":"Lira","start_url":".","display":"standalone","background_color":"#fff7ed","theme_color":"#ea580c"}'>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -146,19 +132,32 @@ const HTML_PAGE = `
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { background-color: #fff7ed; color: #431407; margin: 0; }
+        body { background-color: #fff7ed; color: #431407; margin: 0; overflow-x: hidden; }
     </style>
 </head>
 <body>
     <div id="root"></div>
+
     <script>
-        // تسجيل الـ Service Worker للعمل دون اتصال
-        if ('serviceWorker' in navigator) {
-            const blob = new Blob([\`${SW_CODE}\`], {type: 'application/javascript'});
-            const url = URL.createObjectURL(blob);
-            navigator.serviceWorker.register(url);
-        }
+    // تسجيل الـ Service Worker برمجياً من داخل الملف
+    if ('serviceWorker' in navigator) {
+        const swCode = \`
+            const CACHE_NAME = 'lira-offline-v1';
+            self.addEventListener('install', (event) => {
+                event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['/'])));
+            });
+            self.addEventListener('fetch', (event) => {
+                event.respondWith(
+                    caches.match(event.request).then((response) => response || fetch(event.request))
+                );
+            });
+        \`;
+        const blob = new Blob([swCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        navigator.serviceWorker.register(url);
+    }
     </script>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
         const DENOMS_NEW = [
@@ -206,25 +205,25 @@ const HTML_PAGE = `
             }, [val, isOldToNew]);
 
             return (
-                <div className="min-h-screen p-4 pb-12">
+                <div className="min-h-screen p-4 pb-12 select-none">
                     <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg">ل</div>
+                            <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">ل</div>
                             <h1 className="text-xl font-black text-orange-900">ليرتي</h1>
                         </div>
                         <button onClick={() => setVal('')} className="p-3 bg-white rounded-xl shadow text-orange-400 font-bold">مسح</button>
                     </div>
 
                     <div className="flex p-1 bg-orange-100 rounded-2xl mb-6">
-                        <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-3 rounded-xl text-xs font-black transition-all " + (isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من قديم لجديد</button>
-                        <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-3 rounded-xl text-xs font-black transition-all " + (!isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من جديد لقديم</button>
+                        <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-3 rounded-xl text-xs font-black " + (isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من قديم لجديد</button>
+                        <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-3 rounded-xl text-xs font-black " + (!isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من جديد لقديم</button>
                     </div>
 
                     <div className="bg-white rounded-[2rem] shadow-xl p-6 mb-6 relative border-2 border-orange-50">
                         <div className="text-[10px] font-black text-gray-400 mb-2 uppercase">أدخل المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
                         <input type="text" inputMode="decimal" value={val} onChange={e => setVal(e.target.value)} placeholder="0" className="w-full text-5xl font-black bg-transparent outline-none text-gray-800 mb-8" />
                         
-                        <button onClick={() => setIsOldToNew(!isOldToNew)} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-orange-600 text-white p-3 rounded-full shadow-lg border-4 border-white">
+                        <button onClick={() => setIsOldToNew(!isOldToNew)} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-orange-600 text-white p-3 rounded-full shadow-lg border-4 border-white active:scale-95 transition-transform">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
                         </button>
 
@@ -235,8 +234,7 @@ const HTML_PAGE = `
                     </div>
 
                     <div className="space-y-3">
-                        <h2 className="text-xs font-black text-gray-400 px-2 uppercase">توزيع الفئات</h2>
-                        {parts.length > 0 ? parts.map(p => (
+                        {parts.map(p => (
                             <div key={p.v} className="bg-white p-4 rounded-2xl flex items-center justify-between shadow-sm border border-orange-50">
                                 <div className="flex items-center gap-3">
                                     <span className="text-2xl">{p.s}</span>
@@ -247,11 +245,11 @@ const HTML_PAGE = `
                                 </div>
                                 <div className="bg-orange-100 text-orange-700 px-3 py-1 rounded-lg font-black">×{p.count}</div>
                             </div>
-                        )) : <div className="text-center text-xs text-gray-300 py-10">بانتظار رقم...</div>}
+                        ))}
                     </div>
 
                     {leftover > 0 && (
-                        <div className="mt-4 p-4 bg-orange-50 rounded-2xl border border-orange-200 text-orange-900 text-xs font-bold leading-relaxed">
+                        <div className="mt-4 p-4 bg-orange-50 rounded-2xl border border-orange-200 text-orange-900 text-xs font-bold shadow-sm">
                             ⚠️ ملاحظة الفراطة: بقي {leftover.toLocaleString()}، تدفعها بال{isOldToNew ? 'قديم' : 'جديد'} ({isOldToNew ? Math.round(leftover * 100).toLocaleString() : (leftover/100).toFixed(2)}).
                         </div>
                     )}
@@ -272,9 +270,6 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     try {
-      if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) {
-        return res.status(401).send("Unauthorized");
-      }
       const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
       await bot.handleUpdate(update);
       return res.status(200).send("OK");

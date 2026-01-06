@@ -1,106 +1,91 @@
 import json
 import re
 from datetime import datetime, timezone
-from PIL import Image
-import pytesseract
 
-IMG_PATH = "latest.jpg"
+IN_TXT = "rates.txt"
 OUT_JSON = "rates.json"
-OUT_OCR = "ocr.txt"
 
-# ترتيب العملات كما تظهر في النشرة (حسب الصورة المرفقة)
 ORDERED_CURRENCIES = ["KWD", "USD", "SEK", "AED", "GBP", "JOD", "EUR", "SAR"]
 
-def normalize(text: str) -> str:
-    # تحويل الأرقام العربية إلى إنجليزية
-    arabic_digits = "٠١٢٣٤٥٦٧٨٩"
-    for i, d in enumerate(arabic_digits):
-        text = text.replace(d, str(i))
+def parse_rates_txt(text: str):
+    """
+    يتوقع شكل:
+    CUR
+    123.45
+    +0.00  (أو -0.41 أو 0.00)
+    """
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    rates = {}
 
-    # توحيد فواصل وأخطاء OCR الشائعة
-    text = text.replace("،", ",")
-    text = text.replace(":", ".")   # أحياناً OCR يحول النقطة إلى :
-    text = re.sub(r"[ \t]+", " ", text)
-    return text
+    i = 0
+    while i < len(lines):
+        # العملة تكون مثل: "KWD 🇰🇼"
+        cur_line = lines[i]
+        m = re.match(r"^([A-Z]{3})\b", cur_line.upper())
+        if not m:
+            i += 1
+            continue
 
-def extract_date(text: str) -> str | None:
-    # تاريخ مثل 05-01-2026
+        cur = m.group(1)
+        price = None
+        change = None
+
+        # السطر التالي السعر
+        if i + 1 < len(lines):
+            try:
+                price = float(lines[i + 1].replace(",", "").replace(":", "."))
+            except:
+                price = None
+
+        # السطر الثالث التغير
+        if i + 2 < len(lines):
+            ch = lines[i + 2].replace(" ", "")
+            # يقبل 0.00 أو +0.03 أو -0.41
+            if re.match(r"^[+-]?\d+(\.\d+)?$", ch):
+                try:
+                    change = float(ch)
+                except:
+                    change = None
+
+        rates[cur] = {"mid": price, "change": change}
+        i += 3
+
+    # رتب حسب ORDERED_CURRENCIES وضمن وجود كل العملات
+    ordered = {}
+    for c in ORDERED_CURRENCIES:
+        ordered[c] = rates.get(c, {"mid": None, "change": None})
+
+    return ordered
+
+def extract_date(text: str):
+    # اختياري: إذا حاب تكتب التاريخ داخل rates.txt كسطر مثل: DATE: 05-01-2026
     m = re.search(r"\b(\d{2}-\d{2}-\d{4})\b", text)
     return m.group(1) if m else None
 
-def extract_rates_by_order(text: str):
-    """
-    استخراج السعر لكل عملة اعتماداً على ترتيب ظهورها.
-    نبحث عن العملة ثم نأخذ أول رقم عشري بعدها (السعر).
-    نتجاهل أرقام التغير (مثل 0.00 أو 0.41-).
-    """
-    rates = {}
-    upper = text.upper()
-
-    for cur in ORDERED_CURRENCIES:
-        # ابحث عن أول ظهور للرمز (حتى لو OCR شوّه بعض الحروف، USD/EUR/SAR غالباً صحيحة)
-        idx = upper.find(cur)
-        if idx == -1:
-            rates[cur] = None
-            continue
-
-        # خذ مقطع صغير بعد العملة للبحث عن أرقام
-        chunk = upper[idx: idx + 200]
-
-        # التقط أرقام عشرية (361.37, 111.00 ...)
-        nums = re.findall(r"\d+(?:\.\d+)?", chunk)
-
-        # فلترة: نريد أول رقم "كبير" أو منطقي كسعر (عادة > 1)
-        # واستبعاد أرقام التغير الصغيرة (مثل 0.00)
-        price = None
-        for n in nums:
-            try:
-                val = float(n)
-            except:
-                continue
-            # قاعدة بسيطة: السعر غالباً >= 1
-            # وللتأكد أكثر: استبعد 0 و 0.xx
-            if val >= 1:
-                price = val
-                break
-
-        rates[cur] = price
-
-    return rates
-
 def main():
-    img = Image.open(IMG_PATH)
+    with open(IN_TXT, "r", encoding="utf-8") as f:
+        txt = f.read()
 
-    # OCR عربي + إنجليزي
-    raw = pytesseract.image_to_string(img, lang="ara+eng")
-    raw = normalize(raw)
-
-    with open(OUT_OCR, "w", encoding="utf-8") as f:
-        f.write(raw)
-
-    bulletin_date = extract_date(raw)
-    rates = extract_rates_by_order(raw)
+    bulletin_date = extract_date(txt)
+    rates = parse_rates_txt(txt)
 
     payload = {
-        "source": "Central Bank of Syria (uploaded bulletin image)",
-        "bulletin_date": bulletin_date,  # مثال: 05-01-2026
+        "source": "Manual rates feed (rates.txt)",
+        "bulletin_date": bulletin_date,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "image": IMG_PATH,
         "base": "SYP",
         "mode": "official_mid_rates",
         "rates": rates,
         "ordered_currencies": ORDERED_CURRENCIES,
         "notes": [
-            "Rates extracted by fixed order to avoid OCR mistakes in currency codes.",
-            "If a currency is null, check ocr.txt and adjust ORDERED_CURRENCIES or parsing window."
+            "Rates are maintained manually in rates.txt and compiled to rates.json via GitHub Actions."
         ]
     }
 
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    ok_count = sum(1 for v in rates.values() if isinstance(v, (int, float)))
-    print(f"Generated {OUT_JSON} with {ok_count}/{len(ORDERED_CURRENCIES)} rates")
+    print("Generated", OUT_JSON)
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-06T09:54:15.382701+00:00",
+  "generated_at_utc": "2026-01-06T09:55:29.019720+00:00",
   "base": "SYP",
   "mode": "official_mid_rates",
   "rates": {

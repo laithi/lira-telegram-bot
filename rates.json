@@ -1,24 +1,32 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-06T10:15:23.749373+00:00",
+  "generated_at_utc": "2026-01-06T11:34:12.553140+00:00",
   "base": "SYP",
   "mode": "official_mid_rates",
   "rates": {
-    "KWD": {
-      "mid": 361.61,
-      "change": null
-    },
     "USD": {
       "mid": 111.0,
       "change": null
     },
-    "SEK": {
-      "mid": null,
+    "AED": {
+      "mid": 30.24,
       "change": null
     },
-    "AED": {
-      "mid": null,
+    "SAR": {
+      "mid": 29.61,
+      "change": null
+    },
+    "EUR": {
+      "mid": 130.33,
+      "change": null
+    },
+    "KWD": {
+      "mid": 361.61,
+      "change": null
+    },
+    "SEK": {
+      "mid": 12.12,
       "change": null
     },
     "GBP": {
@@ -26,27 +34,19 @@
       "change": null
     },
     "JOD": {
-      "mid": null,
-      "change": null
-    },
-    "EUR": {
-      "mid": null,
-      "change": null
-    },
-    "SAR": {
-      "mid": 29.61,
+      "mid": 156.63,
       "change": null
     }
   },
   "ordered_currencies": [
-    "KWD",
     "USD",
-    "SEK",
     "AED",
-    "GBP",
-    "JOD",
+    "SAR",
     "EUR",
-    "SAR"
+    "KWD",
+    "SEK",
+    "GBP",
+    "JOD"
   ],
   "notes": [
     "Rates are maintained manually in rates.txt and compiled to rates.json via GitHub Actions."

@@ -1,5 +1,6 @@
 import { Telegraf, Markup } from "telegraf";
 
+
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;

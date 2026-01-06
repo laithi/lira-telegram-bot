@@ -7,60 +7,55 @@ OUT_JSON = "rates.json"
 
 ORDERED_CURRENCIES = ["KWD", "USD", "SEK", "AED", "GBP", "JOD", "EUR", "SAR"]
 
+def extract_date(text: str):
+    m = re.search(r"\b(\d{2}-\d{2}-\d{4})\b", text)
+    return m.group(1) if m else None
+
+def to_float(s: str):
+    if s is None:
+        return None
+    s = s.strip().replace(",", "").replace(":", ".")
+    try:
+        return float(s)
+    except:
+        return None
+
 def parse_rates_txt(text: str):
     """
-    يتوقع شكل:
-    CUR
-    123.45
-    +0.00  (أو -0.41 أو 0.00)
+    Expected blocks:
+      CUR ...
+      123.45
+      +0.03 / -0.41 / 0.00
     """
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    rates = {}
+    rates_map = {}
 
     i = 0
     while i < len(lines):
-        # العملة تكون مثل: "KWD 🇰🇼"
-        cur_line = lines[i]
-        m = re.match(r"^([A-Z]{3})\b", cur_line.upper())
+        cur_line = lines[i].upper()
+
+        m = re.match(r"^([A-Z]{3})\b", cur_line)
         if not m:
             i += 1
             continue
 
         cur = m.group(1)
-        price = None
-        change = None
 
-        # السطر التالي السعر
-        if i + 1 < len(lines):
-            try:
-                price = float(lines[i + 1].replace(",", "").replace(":", "."))
-            except:
-                price = None
+        price = to_float(lines[i + 1]) if i + 1 < len(lines) else None
 
-        # السطر الثالث التغير
-        if i + 2 < len(lines):
-            ch = lines[i + 2].replace(" ", "")
-            # يقبل 0.00 أو +0.03 أو -0.41
-            if re.match(r"^[+-]?\d+(\.\d+)?$", ch):
-                try:
-                    change = float(ch)
-                except:
-                    change = None
+        change_raw = lines[i + 2].replace(" ", "") if i + 2 < len(lines) else None
+        # يقبل +0.03 / -0.41 / 0.00
+        change = to_float(change_raw) if (change_raw and re.match(r"^[+-]?\d+(\.\d+)?$", change_raw)) else None
 
-        rates[cur] = {"mid": price, "change": change}
+        rates_map[cur] = {"mid": price, "change": change}
         i += 3
 
-    # رتب حسب ORDERED_CURRENCIES وضمن وجود كل العملات
+    # enforce ordered output and ensure all currencies exist
     ordered = {}
     for c in ORDERED_CURRENCIES:
-        ordered[c] = rates.get(c, {"mid": None, "change": None})
+        ordered[c] = rates_map.get(c, {"mid": None, "change": None})
 
     return ordered
-
-def extract_date(text: str):
-    # اختياري: إذا حاب تكتب التاريخ داخل rates.txt كسطر مثل: DATE: 05-01-2026
-    m = re.search(r"\b(\d{2}-\d{2}-\d{4})\b", text)
-    return m.group(1) if m else None
 
 def main():
     with open(IN_TXT, "r", encoding="utf-8") as f:

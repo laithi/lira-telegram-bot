@@ -3,171 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>دليل الليرة - المحول اللحظي</title>
-    <!-- تحميل المكتبات الأساسية -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <title>دليل الليرة - Vercel</title>
+    
+    <!-- تحميل المكتبات من روابط CDN مستقرة جداً -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    
     <style>
-        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { background-color: #f1f5f9; color: #0f172a; margin: 0; padding: 0; }
-        .card-shadow { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
-        .currency-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-        input::placeholder { color: #cbd5e1; }
+        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { background-color: #f8fafc; color: #0f172a; margin: 0; padding: 0; }
+        .app-container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        .glass-card { background: white; border-radius: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #f1f5f9; }
+        .input-field { font-size: 3rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; color: #1e1b4b; }
+        .grid-currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
+
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
         const RATE = 100;
-        const DENOMS_NEW = [
+        const DEFAULT_RATES = {
+            USD: { mid: 111.00 }, AED: { mid: 30.22 }, SAR: { mid: 29.60 },
+            EUR: { mid: 130.33 }, JOD: { mid: 156.63 }, TRY: { mid: 3.50 }
+        };
+
+        const DENOMS = [
             { v: 500, s: '🌾', n: 'سنابل' }, { v: 200, s: '🫒', n: 'زيتون' }, 
             { v: 100, s: '☁️', n: 'قطن' }, { v: 50, s: '🍊', n: 'حمضيات' }, 
             { v: 25, s: '🍇', n: 'عنب' }, { v: 10, s: '🌼', n: 'ياسمين' }
         ];
 
-        const CURRENCIES = [
-            { code: 'USD', flag: '🇺🇸', name: 'دولار أمريكي' },
-            { code: 'AED', flag: '🇦🇪', name: 'درهم إماراتي' },
-            { code: 'SAR', flag: '🇸🇦', name: 'ريال سعودي' },
-            { code: 'EUR', flag: '🇪🇺', name: 'يورو أوروبي' },
-            { code: 'JOD', flag: '🇯🇴', name: 'دينار أردني' },
-            { code: 'TRY', flag: '🇹🇷', name: 'ليرة تركية' }
-        ];
-
-        // أسعار صرف وسطيّة افتراضية للمعاينة
-        const defaultRates = {
-            USD: { mid: 111.00 }, AED: { mid: 30.22 }, SAR: { mid: 29.60 },
-            EUR: { mid: 130.33 }, JOD: { mid: 156.63 }, TRY: { mid: 3.50 }
-        };
-
         function App() {
             const [val, setVal] = useState('');
-            const [mode, setMode] = useState('oldToNew'); // 'oldToNew' or 'newToOld'
-            const [rates, setRates] = useState(defaultRates);
+            const [mode, setMode] = useState('oldToNew');
+            const [rates, setRates] = useState(DEFAULT_RATES);
 
             useEffect(() => {
-                // محاولة جلب البيانات الحقيقية
                 fetch("https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json")
                     .then(res => res.json())
                     .then(data => { if(data.rates) setRates(data.rates); })
-                    .catch(() => console.log("تحميل المعاينة بالبيانات الافتراضية"));
+                    .catch(() => console.log("استخدام البيانات الافتراضية"));
             }, []);
 
-            const cleanInput = (text) => {
+            // تحويل الأرقام العربية إلى إنجليزية وتنظيف المدخلات
+            const parseInput = (text) => {
                 const normalized = text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
                 return normalized.replace(/[^0-9.]/g, '');
             };
 
-            const num = parseFloat(cleanInput(val)) || 0;
+            const num = parseFloat(parseInput(val)) || 0;
             const convertedVal = mode === 'oldToNew' ? num / RATE : num * RATE;
             const liraNewBase = mode === 'oldToNew' ? convertedVal : num;
 
             const breakdown = useMemo(() => {
                 let current = liraNewBase;
-                const list = [];
+                const result = [];
                 if (current > 0) {
-                    DENOMS_NEW.forEach(d => {
+                    DENOMS.forEach(d => {
                         const count = Math.floor(current / d.v);
                         if (count > 0) {
-                            list.push({ ...d, count });
+                            result.push({ ...d, count });
                             current = Math.round((current - count * d.v) * 100) / 100;
                         }
                     });
                 }
-                return { list, rem: current };
+                return result;
             }, [liraNewBase]);
 
             return (
-                <div className="max-w-md mx-auto p-4 space-y-5 select-none">
+                <div className="app-container space-y-6">
                     {/* Header */}
-                    <div className="flex justify-between items-center px-1">
-                        <div>
-                            <h1 className="text-2xl font-black text-indigo-600 leading-none">دليل الليرة</h1>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">المحول اللحظي</p>
-                        </div>
-                        <div className="bg-slate-200 p-1 rounded-xl flex">
-                            <button 
-                                onClick={() => setMode('oldToNew')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${mode === 'oldToNew' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
-                            >قديم</button>
-                            <button 
-                                onClick={() => setMode('newToOld')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${mode === 'newToOld' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
-                            >جديد</button>
+                    <div className="flex justify-between items-center">
+                        <div className="font-black text-2xl text-indigo-600">دليل الليرة</div>
+                        <div className="bg-slate-200 p-1 rounded-2xl flex">
+                            <button onClick={() => setMode('oldToNew')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${mode === 'oldToNew' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>قديم</button>
+                            <button onClick={() => setMode('newToOld')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${mode === 'newToOld' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>جديد</button>
                         </div>
                     </div>
 
-                    {/* Input Area */}
-                    <div className="bg-white rounded-[32px] p-7 card-shadow border border-slate-100">
-                        <div className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-tighter">
-                            أدخل المبلغ ({mode === 'oldToNew' ? 'ل.س قديمة' : 'ليرة جديدة'})
-                        </div>
+                    {/* Main Input */}
+                    <div className="glass-card p-6">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">المبلغ ({mode === 'oldToNew' ? 'ل.س قديمة' : 'ليرة جديدة'})</div>
                         <input 
                             type="text" 
                             inputMode="decimal"
                             value={val}
                             onChange={(e) => setVal(e.target.value)}
                             placeholder="0.00"
-                            className="w-full text-5xl font-black bg-transparent outline-none caret-indigo-600 text-slate-800"
+                            className="input-field"
                         />
-                        <div className="mt-6 pt-5 border-t border-slate-50 flex justify-between items-center">
-                            <div>
-                                <div className="text-[9px] font-black text-slate-300 uppercase">المعادل ({mode === 'oldToNew' ? 'ليرة جديدة' : 'ل.س قديمة'})</div>
-                                <div className="text-3xl font-black text-indigo-600">
-                                    {convertedVal.toLocaleString('ar-EG', { maximumFractionDigits: 2 })}
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <span className="inline-block px-2 py-1 rounded-md bg-green-50 text-green-600 text-[9px] font-bold uppercase tracking-widest">مباشر</span>
-                            </div>
+                        <div className="mt-4 pt-4 border-t border-slate-50">
+                            <div className="text-[10px] font-bold text-slate-400">النتيجة ({mode === 'oldToNew' ? 'ليرة جديدة' : 'ل.س قديمة'})</div>
+                            <div className="text-3xl font-black text-indigo-600">{convertedVal.toLocaleString('ar-EG')}</div>
                         </div>
                     </div>
 
-                    {/* Currency Grid */}
+                    {/* Currencies */}
                     <div className="space-y-3">
-                        <h2 className="text-[10px] font-black text-slate-400 px-2 uppercase tracking-widest">تحويل للعملات الأجنبية</h2>
-                        <div className="currency-grid">
-                            {CURRENCIES.map(c => {
-                                const rate = rates[c.code]?.mid;
+                        <h3 className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-widest">تحويل العملات</h3>
+                        <div className="grid-currencies">
+                            {Object.keys(DEFAULT_RATES).map(code => {
+                                const rate = rates[code]?.mid;
                                 const result = (rate && liraNewBase > 0) ? (liraNewBase / rate).toFixed(2) : "0.00";
                                 return (
-                                    <div key={c.code} className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col justify-between h-28 card-shadow">
-                                        <div className="flex justify-between items-start">
-                                            <span className="text-xl">{c.flag}</span>
-                                            <span className="text-[9px] font-black text-slate-300">{c.code}</span>
-                                        </div>
-                                        <div>
-                                            <div className="text-xl font-black text-indigo-600">{result}</div>
-                                            <div className="text-[8px] font-bold text-slate-400 uppercase truncate">{c.name}</div>
-                                        </div>
+                                    <div key={code} className="glass-card p-4 flex flex-col justify-between h-24">
+                                        <div className="text-xs font-black text-slate-300">{code}</div>
+                                        <div className="text-xl font-black text-indigo-600">{result}</div>
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* Banknotes */}
-                    {breakdown.list.length > 0 && (
-                        <div className="space-y-3 pb-8">
-                            <h2 className="text-[10px] font-black text-slate-400 px-2 uppercase tracking-widest">الفئات الجديدة المقابلة</h2>
-                            <div className="grid grid-cols-1 gap-2">
-                                {breakdown.list.map(p => (
-                                    <div key={p.v} className="bg-white p-3 rounded-2xl border border-slate-100 flex items-center justify-between card-shadow">
+                    {/* Breakdown */}
+                    {breakdown.length > 0 && (
+                        <div className="space-y-3 pb-10">
+                            <h3 className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-widest">توزيع الفئات</h3>
+                            <div className="space-y-2">
+                                {breakdown.map(b => (
+                                    <div key={b.v} className="glass-card p-3 flex items-center justify-between border-r-4 border-indigo-500">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-xl">{p.s}</div>
+                                            <span className="text-2xl">{b.s}</span>
                                             <div>
-                                                <div className="font-black text-lg leading-none">{p.v}</div>
-                                                <div className="text-[9px] font-bold text-slate-400">{p.n}</div>
+                                                <div className="font-black text-lg">{b.v}</div>
+                                                <div className="text-[10px] text-slate-400 font-bold">{b.n}</div>
                                             </div>
                                         </div>
-                                        <div className="bg-indigo-600 text-white min-w-[40px] h-10 rounded-xl flex items-center justify-center font-black text-lg px-2 shadow-sm">
-                                            ×{p.count}
-                                        </div>
+                                        <div className="bg-indigo-600 text-white font-black px-3 py-1 rounded-lg">× {b.count}</div>
                                     </div>
                                 ))}
                             </div>

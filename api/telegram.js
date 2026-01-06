@@ -13,7 +13,7 @@ const RATE = 100;
 const RATES_URL =
   "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
 
-// --- UI translations (NEW) ---
+// --- UI translations ---
 const UI = {
   ar: {
     introTitle: "دليل الليرة السورية",
@@ -26,8 +26,10 @@ const UI = {
     breakdownSubNew: "حسب فئات الإصدار الجديد",
     breakdownSubOld: "حسب فئات الإصدار القديم",
     changeTitle: "ملاحظة الفراطة",
-    changeLineOldToNew: "بقي *{remaining}* {remUnit}، تدفعها بالقديم (*{payAs}* {payUnit}).",
-    changeLineNewToOld: "بقي *{remaining}* {remUnit}، تدفعها بالجديد (*{payAs}* {payUnit}).",
+    changeLineOldToNew:
+      "بقي *{remaining}* {remUnit}، تدفعها بالقديم (*{payAs}* {payUnit}).",
+    changeLineNewToOld:
+      "بقي *{remaining}* {remUnit}، تدفعها بالجديد (*{payAs}* {payUnit}).",
     sendAnother: "أرسل مبلغاً آخر للحساب.",
     invalidFx: "تعذر جلب أسعار العملات حالياً.",
     fxTitle: "أسعار العملات (وسطي)",
@@ -47,8 +49,10 @@ const UI = {
     breakdownSubNew: "Using NEW issuance denominations",
     breakdownSubOld: "Using OLD issuance denominations",
     changeTitle: "Small change",
-    changeLineOldToNew: "Remaining *{remaining}* {remUnit}, pay in OLD (*{payAs}* {payUnit}).",
-    changeLineNewToOld: "Remaining *{remaining}* {remUnit}, pay in NEW (*{payAs}* {payUnit}).",
+    changeLineOldToNew:
+      "Remaining *{remaining}* {remUnit}, pay in OLD (*{payAs}* {payUnit}).",
+    changeLineNewToOld:
+      "Remaining *{remaining}* {remUnit}, pay in NEW (*{payAs}* {payUnit}).",
     sendAnother: "Send another amount to recalculate.",
     invalidFx: "Could not fetch FX rates right now.",
     fxTitle: "FX Rates (mid)",
@@ -59,7 +63,7 @@ const UI = {
   },
 };
 
-// --- البيانات ---
+// --- denominations ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل القمح", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "الزيتون", en: "Olive" }, s: "🫒" },
@@ -76,10 +80,17 @@ const DENOMS_OLD = [
   { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" },
 ];
 
+// --- per-user state ---
 const userStates = new Map();
 function getUS(id) {
+  // ✅ added: hasInput
   if (!userStates.has(id))
-    userStates.set(id, { lang: "ar", mode: "oldToNew", lastAmount: null });
+    userStates.set(id, {
+      lang: "ar",
+      mode: "oldToNew",
+      lastAmount: null,
+      hasInput: false,
+    });
   return userStates.get(id);
 }
 
@@ -129,7 +140,9 @@ async function fetchFxRates({ force = false } = {}) {
   const now = Date.now();
   if (!force && fxCache.data && now - fxCache.at < FX_CACHE_MS) return fxCache.data;
 
-  const res = await fetch(RATES_URL, { headers: { "cache-control": "no-cache" } });
+  const res = await fetch(RATES_URL, {
+    headers: { "cache-control": "no-cache" },
+  });
   if (!res.ok) throw new Error(`Failed to fetch rates.json: ${res.status}`);
   const data = await res.json();
 
@@ -162,7 +175,7 @@ function fxBlockText(lang, fxData) {
   return out.trimEnd();
 }
 
-// --- لوحة المفاتيح (أزرار ثابتة) ---
+// --- keyboard ---
 function getKeyboard(id) {
   const s = getUS(id);
   const isAr = s.lang === "ar";
@@ -177,25 +190,42 @@ function getKeyboard(id) {
     ],
     [
       Markup.button.callback(
-        isOldToNew ? (isAr ? "✅ من قديم لجديد" : "✅ Old → New") : (isAr ? "من قديم لجديد" : "Old → New"),
+        isOldToNew
+          ? isAr
+            ? "✅ من قديم لجديد"
+            : "✅ Old → New"
+          : isAr
+          ? "من قديم لجديد"
+          : "Old → New",
         "setMode:oldToNew"
       ),
       Markup.button.callback(
-        !isOldToNew ? (isAr ? "✅ من جديد لقديم" : "✅ New → Old") : (isAr ? "من جديد لقديم" : "New → Old"),
+        !isOldToNew
+          ? isAr
+            ? "✅ من جديد لقديم"
+            : "✅ New → Old"
+          : isAr
+          ? "من جديد لقديم"
+          : "New → Old",
         "setMode:newToOld"
       ),
     ],
-    [Markup.button.webApp(isAr ? "📱 فتح التطبيق المصغر" : "📱 Open Mini App", APP_URL)],
+    [
+      Markup.button.webApp(
+        isAr ? "📱 فتح التطبيق المصغر" : "📱 Open Mini App",
+        APP_URL
+      ),
+    ],
   ]);
 }
 
-// ---------- Message builder (keeps your conversion logic intact) ----------
+// ---------- message builder ----------
 async function buildMainMessage(id, amount, { forceFx = false } = {}) {
   const s = getUS(id);
   const ui = UI[s.lang] || UI.ar;
   const isOldToNew = s.mode === "oldToNew";
 
-  // ✅ نفس منطقك بالضبط:
+  // ✅ same conversion logic
   const resVal = isOldToNew ? amount / RATE : amount * RATE;
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
 
@@ -204,14 +234,27 @@ async function buildMainMessage(id, amount, { forceFx = false } = {}) {
   activeDenoms.forEach((d) => {
     const count = Math.floor(remaining / d.v);
     if (count > 0) {
-      // ✅ رجعنا الأيقونة d.s مثل ما كانت
+      // ✅ bring back icons
       distText += `${d.s} ${d.v} - ${d.n[s.lang]} × ${count}\n`;
       remaining = Math.round((remaining - count * d.v) * 100) / 100;
     }
   });
 
-  const inUnit = isOldToNew ? (s.lang === "ar" ? "ل.س قديمة" : "Old SYP") : (s.lang === "ar" ? "ليرة جديدة" : "New Lira");
-  const outUnit = isOldToNew ? (s.lang === "ar" ? "ليرة جديدة" : "New Lira") : (s.lang === "ar" ? "ل.س قديمة" : "Old SYP");
+  const inUnit = isOldToNew
+    ? s.lang === "ar"
+      ? "ل.س قديمة"
+      : "Old SYP"
+    : s.lang === "ar"
+    ? "ليرة جديدة"
+    : "New Lira";
+
+  const outUnit = isOldToNew
+    ? s.lang === "ar"
+      ? "ليرة جديدة"
+      : "New Lira"
+    : s.lang === "ar"
+    ? "ل.س قديمة"
+    : "Old SYP";
 
   let msg = `*${ui.title}*\n\n`;
   msg += `${ui.subtitle}\n\n`;
@@ -222,9 +265,25 @@ async function buildMainMessage(id, amount, { forceFx = false } = {}) {
   msg += `${distText || "—"}\n.\n\n`;
 
   if (remaining > 0) {
-    const payAs = isOldToNew ? Math.round(remaining * RATE) : (remaining / RATE).toFixed(2);
-    const payUnit = isOldToNew ? (s.lang === "ar" ? "ل.س" : "SYP") : (s.lang === "ar" ? "ليرة جديدة" : "New Lira");
-    const remUnit = isOldToNew ? (s.lang === "ar" ? "ليرة جديدة" : "New Lira") : (s.lang === "ar" ? "ل.س قديمة" : "Old SYP");
+    const payAs = isOldToNew
+      ? Math.round(remaining * RATE)
+      : (remaining / RATE).toFixed(2);
+
+    const payUnit = isOldToNew
+      ? s.lang === "ar"
+        ? "ل.س"
+        : "SYP"
+      : s.lang === "ar"
+      ? "ليرة جديدة"
+      : "New Lira";
+
+    const remUnit = isOldToNew
+      ? s.lang === "ar"
+        ? "ليرة جديدة"
+        : "New Lira"
+      : s.lang === "ar"
+      ? "ل.س قديمة"
+      : "Old SYP";
 
     msg += `*${ui.changeTitle}*\n`;
     const template = isOldToNew ? ui.changeLineOldToNew : ui.changeLineNewToOld;
@@ -236,7 +295,7 @@ async function buildMainMessage(id, amount, { forceFx = false } = {}) {
     msg += `\n\n`;
   }
 
-  // ✅ إضافة أسعار العملات ضمن نفس الرسالة
+  // ✅ add FX block in same message
   try {
     const fxData = await fetchFxRates({ force: forceFx });
     msg += `${fxBlockText(s.lang, fxData)}\n\n`;
@@ -248,71 +307,81 @@ async function buildMainMessage(id, amount, { forceFx = false } = {}) {
   return msg;
 }
 
-// ---------- Bot handlers ----------
-bot.start(async (ctx) => {
-  const s = getUS(ctx.from.id);
+// ---------- intro builder (used when no amount) ----------
+async function buildIntroMessage(id, { forceFx = false } = {}) {
+  const s = getUS(id);
   const ui = UI[s.lang] || UI.ar;
 
   let msg = `*${ui.introTitle}*\n${ui.introBody}`;
 
   try {
-    const fxData = await fetchFxRates();
+    const fxData = await fetchFxRates({ force: forceFx });
     msg += "\n\n" + fxBlockText(s.lang, fxData);
   } catch {}
 
-  ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  return msg;
+}
+
+// ---------- Bot handlers ----------
+bot.start(async (ctx) => {
+  const s = getUS(ctx.from.id);
+
+  // ✅ reset input state so switching lang/mode won't show conversion
+  s.lastAmount = null;
+  s.hasInput = false;
+
+  const msg = await buildIntroMessage(ctx.from.id);
+  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.lang = ctx.match[1] === "en" ? "en" : "ar";
 
-  try {
-    if (typeof s.lastAmount === "number") {
-      const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
-      return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-    }
-  } catch {}
+  // ✅ if no input, show intro only (no conversion)
+  if (!s.hasInput || typeof s.lastAmount !== "number") {
+    const msg = await buildIntroMessage(ctx.from.id);
+    await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
+    return;
+  }
 
-  ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  // ✅ otherwise rebuild conversion message in selected lang
+  const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
+  await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1];
 
-  try {
-    if (typeof s.lastAmount === "number") {
-      const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
-      return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-    }
-  } catch {}
+  // ✅ if no input, show intro only (no conversion)
+  if (!s.hasInput || typeof s.lastAmount !== "number") {
+    const msg = await buildIntroMessage(ctx.from.id);
+    await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
+    return;
+  }
 
-  ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  // ✅ otherwise rebuild conversion message with selected mode
+  const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
+  await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action("fx:refresh", async (ctx) => {
   const s = getUS(ctx.from.id);
   const ui = UI[s.lang] || UI.ar;
 
-  if (typeof s.lastAmount !== "number") {
-    let msg = `*${ui.introTitle}*\n${ui.introBody}`;
-    try {
-      const fxData = await fetchFxRates({ force: true });
-      msg += "\n\n" + fxBlockText(s.lang, fxData);
-    } catch {
-      msg += "\n\n" + ui.invalidFx;
-    }
-
+  // ✅ if no input, refresh intro fx only
+  if (!s.hasInput || typeof s.lastAmount !== "number") {
+    const msg = await buildIntroMessage(ctx.from.id, { forceFx: true });
     try {
       await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
     } catch {
       await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
     }
-
     return ctx.answerCbQuery(ui.refreshed);
   }
 
+  // ✅ refresh conversion message (fx + conversion)
   try {
     const msg = await buildMainMessage(ctx.from.id, s.lastAmount, { forceFx: true });
     await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
@@ -330,13 +399,15 @@ bot.on("text", async (ctx) => {
   const amount = parseFloat(text);
   if (isNaN(amount)) return;
 
+  // ✅ mark that user has actually input a value
   s.lastAmount = amount;
+  s.hasInput = true;
 
   const msg = await buildMainMessage(ctx.from.id, amount);
   await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
-// --- الواجهة مع دمج المانيفست والخدمة السحابية للأوفلاين ---
+// --- WebApp HTML (unchanged) ---
 const HTML_PAGE = `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -490,7 +561,8 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     try {
-      const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+      const update =
+        typeof req.body === "string" ? JSON.parse(req.body) : req.body;
       await bot.handleUpdate(update);
       return res.status(200).send("OK");
     } catch (e) {
@@ -499,4 +571,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).send("OK");
-    }
+}

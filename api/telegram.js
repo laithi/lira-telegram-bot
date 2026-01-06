@@ -1,125 +1,107 @@
 import { Telegraf, Markup } from "telegraf";
+import fs from "fs";
+import path from "path";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET; // optional
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
-
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// ✅ GitHub RAW rates.json
-const RATES_URL =
-  "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
-
-// ---------------- UI ----------------
-const UI = {
-  ar: {
-    introTitle: "دليل الليرة السورية",
-    introBody: "اختر الإعدادات أو أرسل مبلغاً:",
-    title: "دليل الليرة",
-    subtitle: "دليل العملة السورية الجديدة",
-    inputLine: "• المبلغ المدخل",
-    outputLine: "• الصافي المعادل",
-    breakdownTitle: "توزيع الفئات النقدية",
-    breakdownSubNew: "حسب فئات الإصدار الجديد",
-    breakdownSubOld: "حسب فئات الإصدار القديم",
-    changeTitle: "ملاحظة الفراطة",
-    changeLineOldToNew:
-      "بقي *{remaining}* {remUnit}، تدفعها بالقديم (*{payAs}* {payUnit}).",
-    changeLineNewToOld:
-      "بقي *{remaining}* {remUnit}، تدفعها بالجديد (*{payAs}* {payUnit}).",
-    sendAnother: "أرسل مبلغاً آخر للحساب.",
-    invalid: "أرسل رقم صحيح فقط 🙏",
-    invalidFx: "تعذر جلب أسعار العملات حالياً.",
-    fxTitle: "أسعار العملات (وسطي)",
-    fxDate: "تاريخ",
-    fxTime: "الساعة",
-    refreshed: "تم تحديث الأسعار ✅",
-    refreshBtn: "🔄 تحديث الأسعار",
-  },
-  en: {
-    introTitle: "Lira Guide",
-    introBody: "Choose settings or send an amount:",
-    title: "Lira Guide",
-    subtitle: "Syrian New Currency Guide",
-    inputLine: "• Input amount",
-    outputLine: "• Equivalent",
-    breakdownTitle: "Banknote distribution",
-    breakdownSubNew: "Using NEW issuance denominations",
-    breakdownSubOld: "Using OLD issuance denominations",
-    changeTitle: "Small change",
-    changeLineOldToNew:
-      "Remaining *{remaining}* {remUnit}, pay in OLD (*{payAs}* {payUnit}).",
-    changeLineNewToOld:
-      "Remaining *{remaining}* {remUnit}, pay in NEW (*{payAs}* {payUnit}).",
-    sendAnother: "Send another amount to recalculate.",
-    invalid: "Please send a valid number 🙏",
-    invalidFx: "Could not fetch FX rates right now.",
-    fxTitle: "FX Rates (mid)",
-    fxDate: "Date",
-    fxTime: "Time",
-    refreshed: "Rates refreshed ✅",
-    refreshBtn: "🔄 Refresh rates",
-  },
-};
-
-// ---------------- Denoms ----------------
+// --- البيانات ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل القمح", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "الزيتون", en: "Olive" }, s: "🫒" },
   { v: 100, n: { ar: "القطن", en: "Cotton" }, s: "☁️" },
   { v: 50, n: { ar: "الحمضيات", en: "Citrus" }, s: "🍊" },
   { v: 25, n: { ar: "العنب", en: "Grapes" }, s: "🍇" },
-  { v: 10, n: { ar: "الياسمين", en: "Jasmine" }, s: "🌼" },
+  { v: 10, n: { ar: "الياسمين", en: "Jasmine" }, s: "🌼" }
 ];
 
 const DENOMS_OLD = [
   { v: 5000, n: { ar: "خمسة آلاف", en: "5000" }, s: "💵" },
   { v: 2000, n: { ar: "ألفين", en: "2000" }, s: "💵" },
   { v: 1000, n: { ar: "ألف", en: "1000" }, s: "💵" },
-  { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" },
+  { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" }
 ];
 
-// ---------------- User state ----------------
+// --- ترجمات البوت الأساسية ---
+const UI = {
+  ar: {
+    title: "دليل الليرة السورية",
+    hint: "اختر الإعدادات أو أرسل مبلغاً:",
+    modeNewToOld: "من جديد لقديم",
+    modeOldToNew: "من قديم لجديد",
+    openMini: "📱 فتح التطبيق المصغر",
+    refresh: "🔄 تحديث الأسعار",
+    fxTitle: "أسعار العملات (وسطي)",
+    fxDate: "تاريخ",
+    fxTime: "الساعة",
+    sendAnother: "أرسل مبلغاً آخر للحساب."
+  },
+  en: {
+    title: "Lira Guide",
+    hint: "Choose settings or send an amount:",
+    modeNewToOld: "New → Old",
+    modeOldToNew: "Old → New",
+    openMini: "📱 Open mini app",
+    refresh: "🔄 Refresh rates",
+    fxTitle: "FX Rates (mid)",
+    fxDate: "Date",
+    fxTime: "Time",
+    sendAnother: "Send another amount to recalculate."
+  }
+};
+
+// --- حالة المستخدم ---
 const userStates = new Map();
 function getUS(id) {
-  if (!userStates.has(id)) {
-    userStates.set(id, {
-      lang: "ar",
-      mode: "oldToNew",
-      lastAmount: null,
-      hasInput: false,
-    });
-  }
+  if (!userStates.has(id)) userStates.set(id, { lang: "ar", mode: "oldToNew" });
   return userStates.get(id);
 }
 
-// ---------------- Helpers ----------------
-function convertArabicDigits(str) {
+// --- أرقام عربية -> إنجليزية ---
+function normalizeNumber(str) {
   return String(str)
-    .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d)
-    .replace(/,/g, "");
+    .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d)
+    .replace(/,/g, "")
+    .trim();
 }
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
+// --- تحميل rates.json (من الريبو) ---
+function loadRatesJson() {
+  // على Vercel: ملفات الريبو موجودة ضمن الـ function bundle
+  // فـ بنقرأها مباشرة من جذر المشروع
+  const filePath = path.join(process.cwd(), "rates.json");
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
 }
 
-function formatDMYHMFromIso(iso) {
-  if (!iso) return { dmy: "—", hm: "—" };
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return { dmy: "—", hm: "—" };
-  const d = pad2(dt.getUTCDate());
-  const m = pad2(dt.getUTCMonth() + 1);
-  const y = dt.getUTCFullYear();
-  const hh = pad2(dt.getUTCHours());
-  const mm = pad2(dt.getUTCMinutes());
-  return { dmy: `${d}:${m}:${y}`, hm: `${hh}:${mm}` };
+// --- تنسيق التاريخ والوقت كما طلبت: d:m:y و h:m ---
+function fmtDateDMY(isoOrNull) {
+  // rates.json عندك فيه generated_at_utc: "2026-01-06T10:15:23..."
+  if (!isoOrNull) return null;
+  const d = new Date(isoOrNull);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const yy = String(d.getUTCFullYear());
+  return `${dd}:${mm}:${yy}`;
+}
+function fmtTimeHM(isoOrNull) {
+  if (!isoOrNull) return null;
+  const d = new Date(isoOrNull);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mi}`;
 }
 
-// ✅ flags + requested order
+// --- تنسيق العملات بالشكل المطلوب: العلم ثم الكود ثم القيمة (الأرقام بالإنكليزي) ---
+const FX_ORDER = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 const FX_FLAGS = {
   USD: "🇺🇸",
   AED: "🇦🇪",
@@ -128,82 +110,41 @@ const FX_FLAGS = {
   KWD: "🇰🇼",
   SEK: "🇸🇪",
   GBP: "🇬🇧",
-  JOD: "🇯🇴",
+  JOD: "🇯🇴"
 };
 
-// ✅ EXACT order you want
-const FX_ORDER = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
-
-// ✅ FX numbers always English, 2 decimals, no grouping
-function fmtFxNumber(n) {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    useGrouping: false,
-  }).format(n);
-}
-
-// ✅ Convert mid if it arrives as string
-function normalizeMid(x) {
-  if (typeof x === "number" && Number.isFinite(x)) return x;
-  if (typeof x === "string") {
-    const cleaned = x.replace(/,/g, "").trim();
-    const n = Number(cleaned);
-    if (Number.isFinite(n)) return n;
+function fmtFxBlock(lang) {
+  const t = UI[lang];
+  const data = loadRatesJson();
+  if (!data?.rates) {
+    return lang === "ar"
+      ? "\n\n*أسعار العملات*\n(لا يوجد ملف rates.json بعد)\n"
+      : "\n\n*FX Rates*\n(rates.json not found yet)\n";
   }
-  return null;
-}
 
-// ---------------- FX fetch (cache) ----------------
-let fxCache = { at: 0, data: null };
-const FX_CACHE_MS = 60 * 1000;
+  const dateStr = fmtDateDMY(data.generated_at_utc);
+  const timeStr = fmtTimeHM(data.generated_at_utc);
 
-async function fetchFxRates({ force = false } = {}) {
-  const now = Date.now();
-  if (!force && fxCache.data && now - fxCache.at < FX_CACHE_MS) return fxCache.data;
+  let out = `\n\n*${t.fxTitle}*\n`;
+  if (dateStr) out += `${t.fxDate}: ${dateStr}\n`;
+  if (timeStr) out += `${t.fxTime}: ${timeStr}\n\n`;
 
-  const res = await fetch(RATES_URL, {
-    headers: { "cache-control": "no-cache" },
-  });
-  if (!res.ok) throw new Error(`Failed to fetch rates.json: ${res.status}`);
-  const data = await res.json();
-
-  fxCache = { at: now, data };
-  return data;
-}
-
-// ✅ FX block: ALWAYS prints all currencies (no skipping)
-function fxBlockText(lang, fxData) {
-  const ui = UI[lang] || UI.ar;
-
-  const gen = formatDMYHMFromIso(fxData?.generated_at_utc);
-  const bulletin = fxData?.bulletin_date || gen.dmy;
-
-  let out = `*${ui.fxTitle}*\n`;
-  out += `${ui.fxDate}: *${bulletin}*\n`;
-  out += `${ui.fxTime}: _${gen.hm}_\n\n`;
-
-  const rates = fxData?.rates || {};
-
-  for (const cur of FX_ORDER) {
-    const flag = FX_FLAGS[cur] || "🏳️";
-
-    const item = rates[cur];
-    const mid = normalizeMid(item?.mid);
-
-    // print even if missing -> show —
-    out += `${flag} ${cur}  ${fmtFxNumber(mid ?? NaN)}\n\n`;
+  for (const code of FX_ORDER) {
+    const flag = FX_FLAGS[code] || "🏳️";
+    const mid = data.rates?.[code]?.mid;
+    if (mid == null) continue; // إذا ناقص لا نعرضه
+    // الأرقام بالإنكليزي دائماً
+    const val = Number(mid).toFixed(2);
+    out += `${flag} ${code}  ${val}\n\n`;
   }
 
   return out.trimEnd();
 }
 
-// ---------------- Keyboard ----------------
+// --- لوحة المفاتيح ---
 function getKeyboard(id) {
   const s = getUS(id);
-  const ui = UI[s.lang] || UI.ar;
-
+  const t = UI[s.lang];
   const isAr = s.lang === "ar";
   const isOldToNew = s.mode === "oldToNew";
 
@@ -211,273 +152,93 @@ function getKeyboard(id) {
     [
       Markup.button.callback(isAr ? "✅ العربية" : "AR", "setLang:ar"),
       Markup.button.callback(!isAr ? "✅ EN" : "EN", "setLang:en"),
-      Markup.button.callback(ui.refreshBtn, "fx:refresh"),
+      Markup.button.callback(t.refresh, "refreshRates")
     ],
     [
-      Markup.button.callback(
-        isOldToNew
-          ? isAr
-            ? "✅ من قديم لجديد"
-            : "✅ Old → New"
-          : isAr
-          ? "من قديم لجديد"
-          : "Old → New",
-        "setMode:oldToNew"
-      ),
-      Markup.button.callback(
-        !isOldToNew
-          ? isAr
-            ? "✅ من جديد لقديم"
-            : "✅ New → Old"
-          : isAr
-          ? "من جديد لقديم"
-          : "New → Old",
-        "setMode:newToOld"
-      ),
+      Markup.button.callback(isOldToNew ? `✅ ${t.modeOldToNew}` : t.modeOldToNew, "setMode:oldToNew"),
+      Markup.button.callback(!isOldToNew ? `✅ ${t.modeNewToOld}` : t.modeNewToOld, "setMode:newToOld")
     ],
-    [Markup.button.webApp(isAr ? "📱 فتح التطبيق المصغر" : "📱 Open Mini App", APP_URL)],
+    [Markup.button.webApp(t.openMini, APP_URL)]
   ]);
 }
 
-// ---------------- Message builder ----------------
-function buildConversionMessage({
-  lang,
-  mode,
-  amountInput,
-  resVal,
-  distText,
-  remaining,
-  fxText,
-}) {
-  const ui = UI[lang] || UI.ar;
+// --- بناء رسالة الـ start (تطلع فيها العملات فوراً) ---
+function buildStartMessage(lang) {
+  const t = UI[lang];
+  let msg = `*${t.title}*\n\n${t.hint}`;
+  msg += fmtFxBlock(lang);
+  return msg;
+}
+
+// --- بناء رسالة التحويل + العملات ضمن نفس الرسالة ---
+function buildConversionMessage(lang, mode, amount, resVal, distText, remaining) {
+  const t = UI[lang];
   const isOldToNew = mode === "oldToNew";
 
-  const inUnit = isOldToNew
-    ? lang === "ar"
-      ? "ل.س قديمة"
-      : "Old SYP"
-    : lang === "ar"
-    ? "ليرة جديدة"
-    : "New Lira";
+  const inUnit = isOldToNew ? (lang === "ar" ? "ل.س قديمة" : "Old SYP") : (lang === "ar" ? "ليرة جديدة" : "New Lira");
+  const outUnit = isOldToNew ? (lang === "ar" ? "ليرة جديدة" : "New Lira") : (lang === "ar" ? "ل.س قديمة" : "Old SYP");
 
-  const outUnit = isOldToNew
-    ? lang === "ar"
-      ? "ليرة جديدة"
-      : "New Lira"
-    : lang === "ar"
-    ? "ل.س قديمة"
-    : "Old SYP";
-
-  let msg = `*${ui.title}*\n\n`;
-  msg += `${ui.subtitle}\n\n`;
-  msg += `${ui.inputLine}: *${amountInput.toLocaleString(lang === "ar" ? "ar-SY" : "en-US")}* ${inUnit}\n`;
-  msg += `${ui.outputLine}: *${resVal.toLocaleString(lang === "ar" ? "ar-SY" : "en-US")}* ${outUnit}\n\n`;
-
-  msg += `*${ui.breakdownTitle}*\n`;
-  msg += `${isOldToNew ? ui.breakdownSubNew : ui.breakdownSubOld}\n\n`;
-  msg += `${distText || "—"}\n\n`;
+  let msg = `*${lang === "ar" ? "دليل الليرة" : "Lira Guide"}*\n\n`;
+  msg += `${lang === "ar" ? "دليل العملة السورية الجديدة" : "Syrian New Currency Guide"}\n\n`;
+  msg += `• ${lang === "ar" ? "المبلغ المدخل" : "Input amount"}: *${amount.toLocaleString("en-US")}* ${inUnit}\n`;
+  msg += `• ${lang === "ar" ? "الصافي المعادل" : "Equivalent"}: *${resVal.toLocaleString("en-US")}* ${outUnit}\n\n`;
+  msg += `*${lang === "ar" ? "توزيع الفئات النقدية" : "Banknote distribution"}*\n`;
+  msg += `${lang === "ar" ? "حسب فئات الإصدار" : "Using"} ${isOldToNew ? (lang === "ar" ? "الجديد" : "NEW issuance") : (lang === "ar" ? "القديم" : "OLD denominations")}\n\n`;
+  msg += `${distText || "—"}\n`;
 
   if (remaining > 0) {
-    const remUnit = isOldToNew
-      ? lang === "ar"
-        ? "ليرة جديدة"
-        : "New Lira"
-      : lang === "ar"
-      ? "ل.س قديمة"
-      : "Old SYP";
-
     const payAs = isOldToNew ? Math.round(remaining * RATE) : (remaining / RATE).toFixed(2);
-
-    const payUnit = isOldToNew
-      ? lang === "ar"
-        ? "ل.س"
-        : "SYP"
-      : lang === "ar"
-      ? "ليرة جديدة"
-      : "New Lira";
-
-    msg += `*${ui.changeTitle}*\n`;
-    msg += (isOldToNew ? ui.changeLineOldToNew : ui.changeLineNewToOld)
-      .replace("{remaining}", remaining.toLocaleString(lang === "ar" ? "ar-SY" : "en-US"))
-      .replace("{remUnit}", remUnit)
-      .replace("{payAs}", String(payAs))
-      .replace("{payUnit}", payUnit);
-    msg += `\n\n`;
+    const payUnit = isOldToNew ? (lang === "ar" ? "ل.س" : "SYP") : (lang === "ar" ? "ليرة جديدة" : "New Lira");
+    const remUnit = isOldToNew ? (lang === "ar" ? "ليرة جديدة" : "New Lira") : (lang === "ar" ? "ل.س قديمة" : "Old SYP");
+    msg += `\n*${lang === "ar" ? "ملاحظة الفراطة" : "Small change"}*\n`;
+    msg += `${lang === "ar" ? "بقي" : "Remaining"} *${Number(remaining).toFixed(2)}* ${remUnit}، `;
+    msg += `${lang === "ar" ? "تدفعها بال" : "pay in "} ${isOldToNew ? (lang === "ar" ? "قديم" : "OLD") : (lang === "ar" ? "جديد" : "NEW")} `;
+    msg += `(*${payAs.toLocaleString("en-US")}* ${payUnit}).\n`;
   }
 
-  if (fxText) msg += `${fxText}\n\n`;
-  msg += ui.sendAnother;
+  msg += `\n${t.sendAnother}`;
+  msg += fmtFxBlock(lang);
 
   return msg;
 }
 
-// ---------------- Bot handlers ----------------
+// --- Handlers ---
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
-  const ui = UI[s.lang] || UI.ar;
-  await ctx.reply(`${ui.introTitle}\n${ui.introBody}`, getKeyboard(ctx.from.id));
+  await ctx.replyWithMarkdown(buildStartMessage(s.lang), getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
-  s.lang = ctx.match[1] === "en" ? "en" : "ar";
-  await ctx.answerCbQuery();
+  const newLang = ctx.match[1] === "en" ? "en" : "ar";
+  s.lang = newLang;
 
-  try {
-    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
-  } catch (_) {}
-
-  if (!s.hasInput || typeof s.lastAmount !== "number") return;
-
-  const amount = s.lastAmount;
-  const isOldToNew = s.mode === "oldToNew";
-  const resVal = isOldToNew ? amount / RATE : amount * RATE;
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-
-  let remaining = resVal;
-  let distText = "";
-  for (const d of activeDenoms) {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
-      remaining = Math.round((remaining - count * d.v) * 100) / 100;
-    }
-  }
-
-  let fxText = "";
-  try {
-    const fxData = await fetchFxRates({ force: false });
-    fxText = fxBlockText(s.lang, fxData);
-  } catch (_) {
-    const ui2 = UI[s.lang] || UI.ar;
-    fxText = `*${ui2.fxTitle}*\n${ui2.invalidFx}`;
-  }
-
-  const msg = buildConversionMessage({
-    lang: s.lang,
-    mode: s.mode,
-    amountInput: amount,
-    resVal,
-    distText: distText.trim(),
-    remaining,
-    fxText,
-  });
-
-  await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  // مهم: ما نعمل نتيجة تحويل وهمية
+  // بس نحدّث نفس الرسالة (start) بقائمة العملات
+  await ctx.editMessageText(buildStartMessage(s.lang), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1] === "newToOld" ? "newToOld" : "oldToNew";
-  await ctx.answerCbQuery();
 
-  try {
-    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
-  } catch (_) {}
-
-  if (!s.hasInput || typeof s.lastAmount !== "number") return;
-
-  const amount = s.lastAmount;
-  const isOldToNew = s.mode === "oldToNew";
-  const resVal = isOldToNew ? amount / RATE : amount * RATE;
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-
-  let remaining = resVal;
-  let distText = "";
-  for (const d of activeDenoms) {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
-      remaining = Math.round((remaining - count * d.v) * 100) / 100;
-    }
-  }
-
-  let fxText = "";
-  try {
-    const fxData = await fetchFxRates({ force: false });
-    fxText = fxBlockText(s.lang, fxData);
-  } catch (_) {
-    const ui2 = UI[s.lang] || UI.ar;
-    fxText = `*${ui2.fxTitle}*\n${ui2.invalidFx}`;
-  }
-
-  const msg = buildConversionMessage({
-    lang: s.lang,
-    mode: s.mode,
-    amountInput: amount,
-    resVal,
-    distText: distText.trim(),
-    remaining,
-    fxText,
-  });
-
-  await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  // نفس الفكرة: نحدّث الرسالة الأساسية فقط، بدون حساب
+  await ctx.editMessageText(buildStartMessage(s.lang), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
-bot.action("fx:refresh", async (ctx) => {
+bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
-  const ui = UI[s.lang] || UI.ar;
-
-  try {
-    await fetchFxRates({ force: true });
-    await ctx.answerCbQuery(ui.refreshed);
-  } catch (_) {
-    await ctx.answerCbQuery(ui.invalidFx);
-  }
-
-  try {
-    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
-  } catch (_) {}
-
-  if (!s.hasInput || typeof s.lastAmount !== "number") return;
-
-  // resend last message with refreshed rates
-  const amount = s.lastAmount;
-  const isOldToNew = s.mode === "oldToNew";
-  const resVal = isOldToNew ? amount / RATE : amount * RATE;
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-
-  let remaining = resVal;
-  let distText = "";
-  for (const d of activeDenoms) {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
-      remaining = Math.round((remaining - count * d.v) * 100) / 100;
-    }
-  }
-
-  let fxText = "";
-  try {
-    const fxData = await fetchFxRates({ force: false });
-    fxText = fxBlockText(s.lang, fxData);
-  } catch (_) {
-    fxText = `*${ui.fxTitle}*\n${ui.invalidFx}`;
-  }
-
-  const msg = buildConversionMessage({
-    lang: s.lang,
-    mode: s.mode,
-    amountInput: amount,
-    resVal,
-    distText: distText.trim(),
-    remaining,
-    fxText,
-  });
-
-  await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  // يحدث نفس الرسالة (قائمة العملات) فوراً
+  await ctx.editMessageText(buildStartMessage(s.lang), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
+// --- التحويل ---
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
-  const ui = UI[s.lang] || UI.ar;
 
-  const raw = convertArabicDigits(ctx.message.text);
-  const amount = parseFloat(raw);
-  if (Number.isNaN(amount)) return ctx.reply(ui.invalid, getKeyboard(ctx.from.id));
-
-  s.lastAmount = amount;
-  s.hasInput = true;
+  const text = normalizeNumber(ctx.message.text);
+  const amount = parseFloat(text);
+  if (isNaN(amount)) return;
 
   const isOldToNew = s.mode === "oldToNew";
   const resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -485,49 +246,32 @@ bot.on("text", async (ctx) => {
 
   let remaining = resVal;
   let distText = "";
-  for (const d of activeDenoms) {
+
+  activeDenoms.forEach((d) => {
     const count = Math.floor(remaining / d.v);
     if (count > 0) {
+      // رجعنا الشعارات/الإيموجي
       distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
       remaining = Math.round((remaining - count * d.v) * 100) / 100;
     }
-  }
-
-  let fxText = "";
-  try {
-    const fxData = await fetchFxRates({ force: false });
-    fxText = fxBlockText(s.lang, fxData);
-  } catch (_) {
-    fxText = `*${ui.fxTitle}*\n${ui.invalidFx}`;
-  }
-
-  const msg = buildConversionMessage({
-    lang: s.lang,
-    mode: s.mode,
-    amountInput: amount,
-    resVal,
-    distText: distText.trim(),
-    remaining,
-    fxText,
   });
 
+  const msg = buildConversionMessage(s.lang, s.mode, amount, resVal, distText, remaining);
   await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
-// ---------------- Vercel handler ----------------
+// --- Webhook handler (Vercel) ---
 export default async function handler(req, res) {
-  if (req.method === "GET") return res.status(200).send("OK");
-
   if (req.method === "POST") {
     try {
       const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
       await bot.handleUpdate(update);
       return res.status(200).send("OK");
-    } catch (_) {
-      // Telegram webhooks must get 200 fast
+    } catch (e) {
+      // لا ترجع 500 لتجنب "Wrong response from webhook"
       return res.status(200).send("OK");
     }
   }
 
-  return res.status(405).send("Method Not Allowed");
-    }
+  return res.status(200).send("OK");
+}

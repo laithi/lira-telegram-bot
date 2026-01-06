@@ -1,18 +1,16 @@
 name: Build rates.json from rates.txt
-# trigger rerun
+
 on:
   push:
     paths:
       - "rates.txt"
-      - "scripts/**"
+      - "scripts/extract_rates.py"
       - ".github/workflows/rates_ocr.yml"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -23,22 +21,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Ensure rates.txt exists
-        run: |
-          ls -la
-          if [ ! -f "rates.txt" ]; then
-            echo "ERROR: rates.txt not found at repo root."
-            exit 1
-          fi
-
-      - name: Build rates.json (txt -> json)
+      - name: Run extractor
         run: |
           python scripts/extract_rates.py
 
-      - name: Commit rates.json if changed
+      - name: Commit rates.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add rates.json || true
+          git add rates.json
           git diff --cached --quiet || git commit -m "Update rates.json"
           git push

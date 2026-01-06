@@ -1,5 +1,5 @@
 name: Build rates.json from rates.txt
-
+# trigger rerun
 on:
   push:
     paths:

@@ -1,19 +1,42 @@
 {
-  "source": "Central Bank of Syria (uploaded bulletin image)",
+  "source": "Manual rates feed (rates.txt)",
   "bulletin_date": "05-01-2026",
-  "generated_at_utc": "2026-01-06T07:29:00.431782+00:00",
-  "image": "latest.jpg",
+  "generated_at_utc": "2026-01-06T07:42:15.380177+00:00",
   "base": "SYP",
   "mode": "official_mid_rates",
   "rates": {
-    "KWD": null,
-    "USD": 111.0,
-    "SEK": 12.0,
-    "AED": null,
-    "GBP": 149.07,
-    "JOD": null,
-    "EUR": 129.73,
-    "SAR": 29.61
+    "KWD": {
+      "mid": 361.37,
+      "change": 0.0
+    },
+    "USD": {
+      "mid": 111.0,
+      "change": 0.0
+    },
+    "SEK": {
+      "mid": 12.0,
+      "change": -0.41
+    },
+    "AED": {
+      "mid": 30.24,
+      "change": 0.03
+    },
+    "GBP": {
+      "mid": 149.07,
+      "change": -0.27
+    },
+    "JOD": {
+      "mid": 156.63,
+      "change": 0.0
+    },
+    "EUR": {
+      "mid": 129.73,
+      "change": -0.32
+    },
+    "SAR": {
+      "mid": 29.61,
+      "change": 0.0
+    }
   },
   "ordered_currencies": [
     "KWD",
@@ -26,7 +49,6 @@
     "SAR"
   ],
   "notes": [
-    "Rates extracted by fixed order to avoid OCR mistakes in currency codes.",
-    "If a currency is null, check ocr.txt and adjust ORDERED_CURRENCIES or parsing window."
+    "Rates are maintained manually in rates.txt and compiled to rates.json via GitHub Actions."
   ]
 }

@@ -1,7 +1,32 @@
 {
   "source": "Central Bank of Syria (uploaded bulletin image)",
-  "generated_at_utc": "2026-01-06T07:08:44.417075+00:00",
+  "bulletin_date": "05-01-2026",
+  "generated_at_utc": "2026-01-06T07:29:00.431782+00:00",
   "image": "latest.jpg",
-  "rates": {},
-  "note": "Check ocr.txt if any currency missing; bulletin layout may require custom parsing tweaks."
+  "base": "SYP",
+  "mode": "official_mid_rates",
+  "rates": {
+    "KWD": null,
+    "USD": 111.0,
+    "SEK": 12.0,
+    "AED": null,
+    "GBP": 149.07,
+    "JOD": null,
+    "EUR": 129.73,
+    "SAR": 29.61
+  },
+  "ordered_currencies": [
+    "KWD",
+    "USD",
+    "SEK",
+    "AED",
+    "GBP",
+    "JOD",
+    "EUR",
+    "SAR"
+  ],
+  "notes": [
+    "Rates extracted by fixed order to avoid OCR mistakes in currency codes.",
+    "If a currency is null, check ocr.txt and adjust ORDERED_CURRENCIES or parsing window."
+  ]
 }

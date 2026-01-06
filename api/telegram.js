@@ -4,7 +4,6 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
 
-// Optional override
 const DEFAULT_RATES_URL =
   process.env.RATES_URL ||
   "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
@@ -46,8 +45,6 @@ const TRANSLATIONS = {
     invalid: "أرسل رقم صحيح فقط 🙏",
     oldUnit: "ل.س قديمة",
     newUnit: "ليرة جديدة",
-    oldToNew: "من قديم لجديد",
-    newToOld: "من جديد لقديم",
     openMiniApp: "📱 فتح التطبيق المصغر",
     refreshRates: "🔄 تحديث الأسعار",
     fxTitle: "أسعار العملات (وسطي)",
@@ -79,8 +76,6 @@ const TRANSLATIONS = {
     invalid: "Please send a valid number 🙏",
     oldUnit: "Old SYP",
     newUnit: "New Lira",
-    oldToNew: "Old → New",
-    newToOld: "New → Old",
     openMiniApp: "📱 Open mini app",
     refreshRates: "🔄 Refresh rates",
     fxTitle: "FX Rates (mid)",
@@ -161,7 +156,7 @@ function nf(lang) {
 // --- Conversion calc ---
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
-  const resVal = isOldToNew ? amount / RATE : amount * RATE; // result in opposite unit
+  const resVal = isOldToNew ? amount / RATE : amount * RATE;
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
 
   let remaining = resVal;
@@ -263,21 +258,13 @@ function formatRatesBlock(lang, ratesJson) {
   return lines.join("\n").trim();
 }
 
-/**
- * NEW: FX conversion block for BOTH:
- * - input amount
- * - equivalent amount
- *
- * We convert both to OLD SYP first, then foreign = sypOld / mid
- */
 function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Convert input + equivalent to OLD SYP as a common base
-  // rates mid are: 1 CUR = mid OLD SYP
   const isOldToNew = mode === "oldToNew";
 
+  // Convert BOTH amounts to OLD SYP as base
   const inputOldSyp = isOldToNew ? inputAmount : (inputAmount * RATE);
   const eqOldSyp = isOldToNew ? (resVal * RATE) : resVal;
 
@@ -294,7 +281,6 @@ function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
     if (mid == null || !Number.isFinite(Number(mid)) || Number(mid) <= 0) continue;
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
-
     const inputFx = inputOldSyp / Number(mid);
     const eqFx = eqOldSyp / Number(mid);
 
@@ -326,6 +312,11 @@ function buildStartMessage(lang, ratesJson) {
   ].join("\n");
 }
 
+/**
+ * ✅ CHANGE HERE:
+ * We moved:
+ * - Breakdown + Change note BEFORE FX conversions
+ */
 function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfmt = nf(lang);
@@ -343,11 +334,7 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   lines.push(`• ${t.equivalent}: *${nfmt.format(resultObj.resVal)}* ${outUnit}`);
   lines.push("");
 
-  // ✅ NEW: Show FX conversion for BOTH input and equivalent
-  lines.push(formatBothAmountsInFx(lang, mode, amount, resultObj.resVal, ratesJson));
-  lines.push("");
-
-  // Breakdown
+  // ✅ 1) Breakdown FIRST
   lines.push(`*${t.breakdownTitle}*`);
   lines.push(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld);
   lines.push("");
@@ -357,13 +344,11 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   } else {
     for (const p of resultObj.dist) {
       const icon = p.s || "💵";
-      lines.push(`${icon}  *${p.v}* - ${p.n[lang]} × *${p.count}*`);
+      lines.push(`${p.v} - ${p.n[lang]} × ${p.count} ${icon}`);
     }
   }
 
-  lines.push("");
-  lines.push(".");
-
+  // ✅ 2) Change note directly after breakdown (like you want)
   if (resultObj.remaining > 0) {
     lines.push("");
     lines.push(`*${t.changeNote}*`);
@@ -386,7 +371,11 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   }
 
   lines.push("");
-  // ✅ keep the “rates list without conversion” section
+  // ✅ 3) FX conversions AFTER breakdown + change note
+  lines.push(formatBothAmountsInFx(lang, mode, amount, resultObj.resVal, ratesJson));
+  lines.push("");
+
+  // ✅ 4) Keep FX rates list as-is
   lines.push(formatRatesBlock(lang, ratesJson));
   lines.push("");
   lines.push(t.sendAnother);
@@ -420,8 +409,6 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1] === "newToOld" ? "newToOld" : "oldToNew";
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-
-  // ✅ do not reset text, only update keyboard
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
 });
 
@@ -477,4 +464,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).send("ok");
-    }
+                       }

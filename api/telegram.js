@@ -13,7 +13,7 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- البيانات ---
+// --- Denominations Data ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
@@ -29,6 +29,12 @@ const DENOMS_OLD = [
   { v: 1000, n: { ar: "ألف", en: "1000" }, s: "💵" },
   { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" },
 ];
+
+const FLAG_BY_CODE = { 
+  USD: "🇺🇸", AED: "🇦🇪", SAR: "🇸🇦", EUR: "🇪🇺", 
+  KWD: "🇰🇼", SEK: "🇸🇪", GBP: "🇬🇧", JOD: "🇯🇴" 
+};
+const ORDERED_CODES = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 
 const TRANSLATIONS = {
   ar: {
@@ -64,6 +70,8 @@ const TRANSLATIONS = {
     fxEqLabel: "المعادل",
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
+    fxDualNew: "بـالجديدة تشتري",
+    fxDualOld: "بـالقديمة تشتري"
   },
   en: {
     title: "Lira Guide",
@@ -98,6 +106,8 @@ const TRANSLATIONS = {
     fxEqLabel: "Eq",
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
+    fxDualNew: "With NEW you buy",
+    fxDualOld: "With OLD you buy"
   },
 };
 
@@ -159,7 +169,17 @@ function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 
-// --- Core Calc ---
+function pad2(n) { return String(n).padStart(2, "0"); }
+function formatDMY_HM(iso) {
+  if (!iso) return { date: null, time: null };
+  const d = new Date(iso);
+  return { 
+    date: `${pad2(d.getUTCDate())}:${pad2(d.getUTCMonth()+1)}:${d.getUTCFullYear()}`, 
+    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}` 
+  };
+}
+
+// --- Core Calculation ---
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -194,21 +214,22 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- FX Logic (Dual Result) ---
+// --- FX Logic (Corrected Dual Result) ---
 function buildFxMessage(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   
   const originalAmount = s.lastAmount;
-  const isCurrentlyOld = s.mode === "oldToNew"; // المدخل قديم
+  const isCurrentlyOld = s.mode === "oldToNew";
   
-  // توحيد القيم للحساب:
-  const valOld = isCurrentlyOld ? originalAmount : (originalAmount * RATE);
-  const valNew = isCurrentlyOld ? (originalAmount / RATE) : originalAmount;
-
+  // Logic: 
+  // 1. If user entered 1000 SYP (Old) -> How much USD? 
+  // 2. If user entered 1000 Lira (New) -> How much USD?
+  // We calculate both scenarios for the numerical value 'originalAmount'
+  
   const lines = [`*${t.fxCalcTitle}*`, ""];
-  lines.push(`💰 ${t.inputAmount}: *${nf(lang, originalAmount)}* ${isCurrentlyOld ? t.oldUnit : t.newUnit}`);
+  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}*`);
   lines.push("ــــــــــــــــــــ");
 
   let printed = 0;
@@ -218,13 +239,15 @@ function buildFxMessage(lang, s, ratesJson) {
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
     
-    // الحساب بناء على أن السعر في JSON هو مقابل "الليرة الجديدة"
-    const resultFromNew = valNew / mid;
-    const resultFromOld = (valOld / RATE) / mid; // نفس النتيجة فعلياً
+    // Result if the amount is considered NEW (JSON rates are per 1 New Lira)
+    const resultAsNew = originalAmount / mid;
+    
+    // Result if the amount is considered OLD (USD price in Old = mid * 100)
+    const resultAsOld = originalAmount / (mid * RATE);
 
     lines.push(`${flag}  *${code}*`);
-    lines.push(`• مقابل الجديدة: *${nfEN.format(resultFromNew)}*`);
-    lines.push(`• مقابل القديمة: *${nfEN.format(resultFromOld)}*`);
+    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
+    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
     lines.push("");
     printed++;
   }
@@ -232,9 +255,6 @@ function buildFxMessage(lang, s, ratesJson) {
   if (!printed) lines.push(t.fxNoRatesNow);
   return lines.join("\n").trim();
 }
-
-const FLAG_BY_CODE = { USD: "🇺🇸", AED: "🇦🇪", SAR: "🇸🇦", EUR: "🇪🇺", KWD: "🇰🇼", SEK: "🇸🇪", GBP: "🇬🇧", JOD: "🇯🇴" };
-const ORDERED_CODES = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 
 // --- Message Builders ---
 function formatRatesBlock(lang, ratesJson) {
@@ -252,16 +272,6 @@ function formatRatesBlock(lang, ratesJson) {
     if (mid) lines.push(`${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`);
   }
   return lines.join("\n").trim();
-}
-
-function pad2(n) { return String(n).padStart(2, "0"); }
-function formatDMY_HM(iso) {
-  if (!iso) return { date: null, time: null };
-  const d = new Date(iso);
-  return { 
-    date: `${pad2(d.getUTCDate())}:${pad2(d.getUTCMonth()+1)}:${d.getUTCFullYear()}`, 
-    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}` 
-  };
 }
 
 function buildResultMessage(lang, mode, amount, res, ratesJson) {
@@ -285,7 +295,7 @@ function buildResultMessage(lang, mode, amount, res, ratesJson) {
   if (!res.dist.length) lines.push("—");
   else {
     for (const p of res.dist) {
-      // التنسيق المطلوب: الرمز ثم القيمة ثم العدد
+      // Format: Symbol  Value  x  Count
       lines.push(`${p.s}   *${p.v}* ×   ${p.count}`);
     }
   }
@@ -303,7 +313,7 @@ function buildResultMessage(lang, mode, amount, res, ratesJson) {
   return lines.join("\n");
 }
 
-// --- Handlers ---
+// --- Bot Actions & Handlers ---
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates();
@@ -366,6 +376,7 @@ bot.on("text", async (ctx) => {
   return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult, rates), getKeyboard(ctx.from.id));
 });
 
+// --- Vercel Export ---
 export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);

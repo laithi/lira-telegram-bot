@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from "telegraf";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
+const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET; // optional (not used here)
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
 
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
@@ -9,7 +9,7 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// ✅ GitHub RAW rates.json (Option B: mid + change)
+// ✅ GitHub RAW rates.json (manual feed compiled by Actions)
 const RATES_URL =
   "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
 
@@ -31,6 +31,7 @@ const UI = {
     changeLineNewToOld:
       "بقي *{remaining}* {remUnit}، تدفعها بالجديد (*{payAs}* {payUnit}).",
     sendAnother: "أرسل مبلغاً آخر للحساب.",
+    invalid: "أرسل رقم صحيح فقط 🙏",
     invalidFx: "تعذر جلب أسعار العملات حالياً.",
     fxTitle: "أسعار العملات (وسطي)",
     fxDate: "تاريخ",
@@ -54,6 +55,7 @@ const UI = {
     changeLineNewToOld:
       "Remaining *{remaining}* {remUnit}, pay in NEW (*{payAs}* {payUnit}).",
     sendAnother: "Send another amount to recalculate.",
+    invalid: "Please send a valid number 🙏",
     invalidFx: "Could not fetch FX rates right now.",
     fxTitle: "FX Rates (mid)",
     fxDate: "Date",
@@ -83,14 +85,14 @@ const DENOMS_OLD = [
 // --- per-user state ---
 const userStates = new Map();
 function getUS(id) {
-  // ✅ added: hasInput
-  if (!userStates.has(id))
+  if (!userStates.has(id)) {
     userStates.set(id, {
       lang: "ar",
       mode: "oldToNew",
       lastAmount: null,
       hasInput: false,
     });
+  }
   return userStates.get(id);
 }
 
@@ -104,6 +106,7 @@ function convertArabicDigits(str) {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
+
 function formatDMYHMFromIso(iso) {
   if (!iso) return { dmy: "—", hm: "—" };
   const dt = new Date(iso);
@@ -116,20 +119,28 @@ function formatDMYHMFromIso(iso) {
   return { dmy: `${d}:${m}:${y}`, hm: `${hh}:${mm}` };
 }
 
-function formatChange(n) {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(2)}`;
-}
+// ✅ FX: flags + custom order (as you requested)
+const FX_FLAGS = {
+  USD: "🇺🇸",
+  AED: "🇦🇪",
+  SAR: "🇸🇦",
+  EUR: "🇪🇺",
+  KWD: "🇰🇼",
+  SEK: "🇸🇪",
+  GBP: "🇬🇧",
+  JOD: "🇯🇴",
+};
 
-function fmtNum(n, lang) {
-  try {
-    return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", {
-      maximumFractionDigits: 2,
-    }).format(n);
-  } catch {
-    return String(n);
-  }
+const FX_ORDER = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
+
+// ✅ FX numbers always in English and clean (2 decimals), no commas
+function fmtFxNumber(n) {
+  if (typeof n !== "number" || Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(n);
 }
 
 // ---------- FX fetch (with cache) ----------
@@ -150,26 +161,28 @@ async function fetchFxRates({ force = false } = {}) {
   return data;
 }
 
+// ✅ FX block style: FLAG then CODE then VALUE (one line each)
 function fxBlockText(lang, fxData) {
   const ui = UI[lang] || UI.ar;
 
   if (!fxData?.rates) {
-    return `\n*${ui.fxTitle}*\n${ui.invalidFx}`;
+    return `*${ui.fxTitle}*\n${ui.invalidFx}`;
   }
 
   const gen = formatDMYHMFromIso(fxData.generated_at_utc);
   const bulletin = fxData.bulletin_date || gen.dmy;
 
-  const order = fxData.ordered_currencies || Object.keys(fxData.rates);
-
-  let out = `\n*${ui.fxTitle}*\n`;
+  let out = `*${ui.fxTitle}*\n`;
   out += `${ui.fxDate}: *${bulletin}*\n`;
   out += `${ui.fxTime}: _${gen.hm}_\n\n`;
 
-  for (const cur of order) {
+  for (const cur of FX_ORDER) {
     const item = fxData.rates[cur];
-    if (!item || typeof item.mid !== "number") continue;
-    out += `• *${cur}*: ${fmtNum(item.mid, lang)}  _(${formatChange(item.change)})_\n`;
+    const mid = item?.mid;
+    if (typeof mid !== "number") continue;
+
+    const flag = FX_FLAGS[cur] || "";
+    out += `${flag} ${cur}  ${fmtFxNumber(mid)}\n\n`;
   }
 
   return out.trimEnd();
@@ -219,356 +232,244 @@ function getKeyboard(id) {
   ]);
 }
 
-// ---------- message builder ----------
-async function buildMainMessage(id, amount, { forceFx = false } = {}) {
-  const s = getUS(id);
-  const ui = UI[s.lang] || UI.ar;
-  const isOldToNew = s.mode === "oldToNew";
+// ---------- Main message builder ----------
+function buildConversionMessage({
+  lang,
+  mode,
+  amountInput,
+  resVal,
+  distText,
+  remaining,
+  fxText,
+}) {
+  const ui = UI[lang] || UI.ar;
+  const isOldToNew = mode === "oldToNew";
 
-  // ✅ same conversion logic
-  const resVal = isOldToNew ? amount / RATE : amount * RATE;
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-
-  let remaining = resVal;
-  let distText = "";
-  activeDenoms.forEach((d) => {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      // ✅ bring back icons
-      distText += `${d.s} ${d.v} - ${d.n[s.lang]} × ${count}\n`;
-      remaining = Math.round((remaining - count * d.v) * 100) / 100;
-    }
-  });
-
-  const inUnit = isOldToNew
-    ? s.lang === "ar"
-      ? "ل.س قديمة"
-      : "Old SYP"
-    : s.lang === "ar"
-    ? "ليرة جديدة"
-    : "New Lira";
-
-  const outUnit = isOldToNew
-    ? s.lang === "ar"
-      ? "ليرة جديدة"
-      : "New Lira"
-    : s.lang === "ar"
-    ? "ل.س قديمة"
-    : "Old SYP";
+  const inUnit = isOldToNew ? (lang === "ar" ? "ل.س قديمة" : "Old SYP") : (lang === "ar" ? "ليرة جديدة" : "New Lira");
+  const outUnit = isOldToNew ? (lang === "ar" ? "ليرة جديدة" : "New Lira") : (lang === "ar" ? "ل.س قديمة" : "Old SYP");
 
   let msg = `*${ui.title}*\n\n`;
   msg += `${ui.subtitle}\n\n`;
-  msg += `${ui.inputLine}: *${amount.toLocaleString()}* ${inUnit}\n`;
-  msg += `${ui.outputLine}: *${resVal.toLocaleString()}* ${outUnit}\n\n`;
+  msg += `${ui.inputLine}: *${amountInput.toLocaleString(lang === "ar" ? "ar-SY" : "en-US")}* ${inUnit}\n`;
+  msg += `${ui.outputLine}: *${resVal.toLocaleString(lang === "ar" ? "ar-SY" : "en-US")}* ${outUnit}\n\n`;
+
   msg += `*${ui.breakdownTitle}*\n`;
   msg += `${isOldToNew ? ui.breakdownSubNew : ui.breakdownSubOld}\n\n`;
-  msg += `${distText || "—"}\n.\n\n`;
+  msg += `${distText || "—"}\n\n`;
 
   if (remaining > 0) {
-    const payAs = isOldToNew
-      ? Math.round(remaining * RATE)
-      : (remaining / RATE).toFixed(2);
-
-    const payUnit = isOldToNew
-      ? s.lang === "ar"
-        ? "ل.س"
-        : "SYP"
-      : s.lang === "ar"
-      ? "ليرة جديدة"
-      : "New Lira";
-
-    const remUnit = isOldToNew
-      ? s.lang === "ar"
-        ? "ليرة جديدة"
-        : "New Lira"
-      : s.lang === "ar"
-      ? "ل.س قديمة"
-      : "Old SYP";
+    const remUnit = isOldToNew ? (lang === "ar" ? "ليرة جديدة" : "New Lira") : (lang === "ar" ? "ل.س قديمة" : "Old SYP");
+    const payAs = isOldToNew ? Math.round(remaining * RATE) : (remaining / RATE).toFixed(2);
+    const payUnit = isOldToNew ? (lang === "ar" ? "ل.س" : "SYP") : (lang === "ar" ? "ليرة جديدة" : "New Lira");
 
     msg += `*${ui.changeTitle}*\n`;
-    const template = isOldToNew ? ui.changeLineOldToNew : ui.changeLineNewToOld;
-    msg += template
-      .replace("{remaining}", String(remaining))
+    msg += (isOldToNew ? ui.changeLineOldToNew : ui.changeLineNewToOld)
+      .replace("{remaining}", remaining.toLocaleString(lang === "ar" ? "ar-SY" : "en-US"))
       .replace("{remUnit}", remUnit)
       .replace("{payAs}", String(payAs))
       .replace("{payUnit}", payUnit);
     msg += `\n\n`;
   }
 
-  // ✅ add FX block in same message
-  try {
-    const fxData = await fetchFxRates({ force: forceFx });
-    msg += `${fxBlockText(s.lang, fxData)}\n\n`;
-  } catch {
-    msg += `*${ui.fxTitle}*\n${ui.invalidFx}\n\n`;
+  if (fxText) {
+    msg += `${fxText}\n\n`;
   }
 
   msg += ui.sendAnother;
   return msg;
 }
 
-// ---------- intro builder (used when no amount) ----------
-async function buildIntroMessage(id, { forceFx = false } = {}) {
-  const s = getUS(id);
-  const ui = UI[s.lang] || UI.ar;
-
-  let msg = `*${ui.introTitle}*\n${ui.introBody}`;
-
-  try {
-    const fxData = await fetchFxRates({ force: forceFx });
-    msg += "\n\n" + fxBlockText(s.lang, fxData);
-  } catch {}
-
-  return msg;
-}
-
 // ---------- Bot handlers ----------
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
-
-  // ✅ reset input state so switching lang/mode won't show conversion
-  s.lastAmount = null;
-  s.hasInput = false;
-
-  const msg = await buildIntroMessage(ctx.from.id);
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  const ui = UI[s.lang] || UI.ar;
+  await ctx.reply(`${ui.introTitle}\n${ui.introBody}`, getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
-  s.lang = ctx.match[1] === "en" ? "en" : "ar";
+  const newLang = ctx.match[1] === "en" ? "en" : "ar";
+  s.lang = newLang;
 
-  // ✅ if no input, show intro only (no conversion)
-  if (!s.hasInput || typeof s.lastAmount !== "number") {
-    const msg = await buildIntroMessage(ctx.from.id);
-    await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-    return;
+  // ✅ IMPORTANT: Do NOT auto-calc on language toggle if no input yet
+  await ctx.answerCbQuery();
+
+  // update only the buttons
+  try {
+    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  } catch (_) {}
+
+  // if user already provided input before, resend last computed message in new language
+  if (s.hasInput && typeof s.lastAmount === "number") {
+    const amount = s.lastAmount;
+    const isOldToNew = s.mode === "oldToNew";
+    const resVal = isOldToNew ? amount / RATE : amount * RATE;
+    const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+
+    let remaining = resVal;
+    let distText = "";
+    for (const d of activeDenoms) {
+      const count = Math.floor(remaining / d.v);
+      if (count > 0) {
+        distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
+        remaining = Math.round((remaining - count * d.v) * 100) / 100;
+      }
+    }
+
+    let fxText = "";
+    try {
+      const fxData = await fetchFxRates({ force: false });
+      fxText = fxBlockText(s.lang, fxData);
+    } catch (_) {
+      fxText = `*${(UI[s.lang] || UI.ar).fxTitle}*\n${(UI[s.lang] || UI.ar).invalidFx}`;
+    }
+
+    const msg = buildConversionMessage({
+      lang: s.lang,
+      mode: s.mode,
+      amountInput: amount,
+      resVal,
+      distText: distText.trim(),
+      remaining,
+      fxText,
+    });
+
+    await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
   }
-
-  // ✅ otherwise rebuild conversion message in selected lang
-  const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
-  await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
-  s.mode = ctx.match[1];
+  const newMode = ctx.match[1] === "newToOld" ? "newToOld" : "oldToNew";
+  s.mode = newMode;
 
-  // ✅ if no input, show intro only (no conversion)
-  if (!s.hasInput || typeof s.lastAmount !== "number") {
-    const msg = await buildIntroMessage(ctx.from.id);
-    await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-    return;
+  await ctx.answerCbQuery();
+
+  // update buttons
+  try {
+    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  } catch (_) {}
+
+  // ✅ IMPORTANT: Do NOT auto-calc on mode toggle if no input yet
+  if (!s.hasInput || typeof s.lastAmount !== "number") return;
+
+  // if user already has input, resend computed message with new mode
+  const amount = s.lastAmount;
+  const isOldToNew = s.mode === "oldToNew";
+  const resVal = isOldToNew ? amount / RATE : amount * RATE;
+  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+
+  let remaining = resVal;
+  let distText = "";
+  for (const d of activeDenoms) {
+    const count = Math.floor(remaining / d.v);
+    if (count > 0) {
+      distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
+      remaining = Math.round((remaining - count * d.v) * 100) / 100;
+    }
   }
 
-  // ✅ otherwise rebuild conversion message with selected mode
-  const msg = await buildMainMessage(ctx.from.id, s.lastAmount);
-  await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
+  let fxText = "";
+  try {
+    const fxData = await fetchFxRates({ force: false });
+    fxText = fxBlockText(s.lang, fxData);
+  } catch (_) {
+    fxText = `*${(UI[s.lang] || UI.ar).fxTitle}*\n${(UI[s.lang] || UI.ar).invalidFx}`;
+  }
+
+  const msg = buildConversionMessage({
+    lang: s.lang,
+    mode: s.mode,
+    amountInput: amount,
+    resVal,
+    distText: distText.trim(),
+    remaining,
+    fxText,
+  });
+
+  await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
 bot.action("fx:refresh", async (ctx) => {
   const s = getUS(ctx.from.id);
   const ui = UI[s.lang] || UI.ar;
 
-  // ✅ if no input, refresh intro fx only
-  if (!s.hasInput || typeof s.lastAmount !== "number") {
-    const msg = await buildIntroMessage(ctx.from.id, { forceFx: true });
-    try {
-      await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-    } catch {
-      await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
-    }
-    return ctx.answerCbQuery(ui.refreshed);
-  }
-
-  // ✅ refresh conversion message (fx + conversion)
   try {
-    const msg = await buildMainMessage(ctx.from.id, s.lastAmount, { forceFx: true });
-    await ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
-  } catch {
-    const msg = await buildMainMessage(ctx.from.id, s.lastAmount, { forceFx: true });
-    await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+    await fetchFxRates({ force: true });
+    await ctx.answerCbQuery(ui.refreshed);
+  } catch (e) {
+    await ctx.answerCbQuery(ui.invalidFx);
   }
 
-  return ctx.answerCbQuery(ui.refreshed);
+  // Only update keyboard (no auto message)
+  try {
+    await ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+  } catch (_) {}
 });
 
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
-  const text = convertArabicDigits(ctx.message.text);
-  const amount = parseFloat(text);
-  if (isNaN(amount)) return;
+  const ui = UI[s.lang] || UI.ar;
 
-  // ✅ mark that user has actually input a value
+  const raw = convertArabicDigits(ctx.message.text);
+  const amount = parseFloat(raw);
+  if (Number.isNaN(amount)) return ctx.reply(ui.invalid, getKeyboard(ctx.from.id));
+
   s.lastAmount = amount;
   s.hasInput = true;
 
-  const msg = await buildMainMessage(ctx.from.id, amount);
+  const isOldToNew = s.mode === "oldToNew";
+  const resVal = isOldToNew ? amount / RATE : amount * RATE;
+  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+
+  let remaining = resVal;
+  let distText = "";
+  for (const d of activeDenoms) {
+    const count = Math.floor(remaining / d.v);
+    if (count > 0) {
+      // ✅ icons are back (d.s)
+      distText += `${d.s}  ${d.v} - ${d.n[s.lang]} × ${count}\n`;
+      remaining = Math.round((remaining - count * d.v) * 100) / 100;
+    }
+  }
+
+  let fxText = "";
+  try {
+    const fxData = await fetchFxRates({ force: false });
+    fxText = fxBlockText(s.lang, fxData);
+  } catch (e) {
+    fxText = `*${ui.fxTitle}*\n${ui.invalidFx}`;
+  }
+
+  const msg = buildConversionMessage({
+    lang: s.lang,
+    mode: s.mode,
+    amountInput: amount,
+    resVal,
+    distText: distText.trim(),
+    remaining,
+    fxText,
+  });
+
   await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
-// --- WebApp HTML (unchanged) ---
-const HTML_PAGE = `
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ليرتي</title>
-    <link rel="manifest" href='data:application/manifest+json,{"name":"Lira","short_name":"Lira","start_url":".","display":"standalone","background_color":"#fff7ed","theme_color":"#ea580c"}'>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>
-        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { background-color: #fff7ed; color: #431407; margin: 0; overflow-x: hidden; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <script>
-    if ('serviceWorker' in navigator) {
-        const swCode = \`
-            const CACHE_NAME = 'lira-offline-v1';
-            self.addEventListener('install', (event) => {
-                event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['/'])));
-            });
-            self.addEventListener('fetch', (event) => {
-                event.respondWith(
-                    caches.match(event.request).then((response) => response || fetch(event.request))
-                );
-            });
-        \`;
-        const blob = new Blob([swCode], { type: 'application/javascript' });
-        const url = URL.createObjectURL(blob);
-        navigator.serviceWorker.register(url);
-    }
-    </script>
-
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-        const DENOMS_NEW = [
-            { v: 500, n: 'سنابل القمح', s: '🌾' }, { v: 200, n: 'أغصان الزيتون', s: '🫒' },
-            { v: 100, n: 'القطن', s: '☁️' }, { v: 50, n: 'الحمضيات', s: '🍊' },
-            { v: 25, n: 'العنب', s: '🍇' }, { v: 10, n: 'الياسمين', s: '🌼' }
-        ];
-        const DENOMS_OLD = [
-            { v: 5000, n: '5000', s: '💵' }, { v: 2000, n: '2000', s: '💵' },
-            { v: 1000, n: '1000', s: '💵' }, { v: 500, n: '500', s: '💵' }
-        ];
-
-        function App() {
-            const [val, setVal] = useState('');
-            const [isOldToNew, setIsOldToNew] = useState(true);
-            const [parts, setParts] = useState([]);
-            const [leftover, setLeftover] = useState(0);
-
-            useEffect(() => { 
-               if(window.Telegram && window.Telegram.WebApp) {
-                   window.Telegram.WebApp.ready(); 
-                   window.Telegram.WebApp.expand();
-               }
-            }, []);
-
-            const cleanNum = (str) => str.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
-            const numVal = parseFloat(cleanNum(val)) || 0;
-            const resVal = isOldToNew ? (numVal / 100) : (numVal * 100);
-
-            useEffect(() => {
-                const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-                let remaining = resVal;
-                const res = [];
-                if (remaining > 0) {
-                    activeDenoms.forEach(d => {
-                        const count = Math.floor(remaining / d.v);
-                        if (count > 0) {
-                            res.push({ ...d, count });
-                            remaining = Math.round((remaining - (count * d.v)) * 100) / 100;
-                        }
-                    });
-                }
-                setParts(res);
-                setLeftover(remaining);
-            }, [val, isOldToNew]);
-
-            return (
-                <div className="min-h-screen p-4 pb-12 select-none">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">ل</div>
-                            <h1 className="text-xl font-black text-orange-900">ليرتي</h1>
-                        </div>
-                        <button onClick={() => setVal('')} className="p-3 bg-white rounded-xl shadow text-orange-400 font-bold">مسح</button>
-                    </div>
-
-                    <div className="flex p-1 bg-orange-100 rounded-2xl mb-6">
-                        <button onClick={() => setIsOldToNew(true)} className={"flex-1 py-3 rounded-xl text-xs font-black " + (isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من قديم لجديد</button>
-                        <button onClick={() => setIsOldToNew(false)} className={"flex-1 py-3 rounded-xl text-xs font-black " + (!isOldToNew ? "bg-white text-orange-600 shadow" : "text-orange-400")}>من جديد لقديم</button>
-                    </div>
-
-                    <div className="bg-white rounded-[2rem] shadow-xl p-6 mb-6 relative border-2 border-orange-50">
-                        <div className="text-[10px] font-black text-gray-400 mb-2 uppercase">أدخل المبلغ ({isOldToNew ? 'قديم' : 'جديد'})</div>
-                        <input type="text" inputMode="decimal" value={val} onChange={e => setVal(e.target.value)} placeholder="0" className="w-full text-5xl font-black bg-transparent outline-none text-gray-800 mb-8" />
-                        
-                        <button onClick={() => setIsOldToNew(!isOldToNew)} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-orange-600 text-white p-3 rounded-full shadow-lg border-4 border-white active:scale-95 transition-transform">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
-                        </button>
-
-                        <div className="pt-4 border-t border-gray-100">
-                            <div className="text-[10px] font-black text-gray-400 mb-1 uppercase">الصافي المعادل ({!isOldToNew ? 'قديم' : 'جديد'})</div>
-                            <div className="text-4xl font-black text-orange-600">{resVal.toLocaleString('ar-SY')}</div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        {parts.map(p => (
-                            <div key={p.v} className="bg-white p-4 rounded-2xl flex items-center justify-between shadow-sm border border-orange-50">
-                                <div className="flex items-center gap-3">
-                                    <span className="text-2xl">{p.s}</span>
-                                    <div>
-                                        <div className="text-xl font-black text-gray-800">{p.v}</div>
-                                        <div className="text-[9px] font-bold text-gray-400">{p.n}</div>
-                                    </div>
-                                </div>
-                                <div className="bg-orange-100 text-orange-700 px-3 py-1 rounded-lg font-black">×{p.count}</div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {leftover > 0 && (
-                        <div className="mt-4 p-4 bg-orange-50 rounded-2xl border border-orange-200 text-orange-900 text-xs font-bold shadow-sm">
-                            ⚠️ ملاحظة الفراطة: بقي {leftover.toLocaleString()}، تدفعها بال{isOldToNew ? 'قديم' : 'جديد'} ({isOldToNew ? Math.round(leftover * 100).toLocaleString() : (leftover/100).toFixed(2)}).
-                        </div>
-                    )}
-                </div>
-            );
-        }
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-    </script>
-</body>
-</html>
-`;
-
+// ---------- Webhook handler (Vercel) ----------
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    res.setHeader("Content-Type", "text/html");
-    return res.status(200).send(HTML_PAGE);
+    return res.status(200).send("OK");
   }
 
   if (req.method === "POST") {
     try {
-      const update =
-        typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+      const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
       await bot.handleUpdate(update);
       return res.status(200).send("OK");
     } catch (e) {
+      // Important for Telegram webhook: always return 200 quickly
       return res.status(200).send("OK");
     }
   }
 
-  return res.status(200).send("OK");
-}
+  return res.status(405).send("Method Not Allowed");
+             }

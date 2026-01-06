@@ -1,1 +1,154 @@
 
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>دليل الليرة - Vercel</title>
+    
+    <!-- تحميل المكتبات من روابط CDN مستقرة جداً -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { background-color: #f8fafc; color: #0f172a; margin: 0; padding: 0; }
+        .app-container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        .glass-card { background: white; border-radius: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #f1f5f9; }
+        .input-field { font-size: 3rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; color: #1e1b4b; }
+        .grid-currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const RATE = 100;
+        const DEFAULT_RATES = {
+            USD: { mid: 111.00 }, AED: { mid: 30.22 }, SAR: { mid: 29.60 },
+            EUR: { mid: 130.33 }, JOD: { mid: 156.63 }, TRY: { mid: 3.50 }
+        };
+
+        const DENOMS = [
+            { v: 500, s: '🌾', n: 'سنابل' }, { v: 200, s: '🫒', n: 'زيتون' }, 
+            { v: 100, s: '☁️', n: 'قطن' }, { v: 50, s: '🍊', n: 'حمضيات' }, 
+            { v: 25, s: '🍇', n: 'عنب' }, { v: 10, s: '🌼', n: 'ياسمين' }
+        ];
+
+        function App() {
+            const [val, setVal] = useState('');
+            const [mode, setMode] = useState('oldToNew');
+            const [rates, setRates] = useState(DEFAULT_RATES);
+
+            useEffect(() => {
+                fetch("https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json")
+                    .then(res => res.json())
+                    .then(data => { if(data.rates) setRates(data.rates); })
+                    .catch(() => console.log("استخدام البيانات الافتراضية"));
+            }, []);
+
+            // تحويل الأرقام العربية إلى إنجليزية وتنظيف المدخلات
+            const parseInput = (text) => {
+                const normalized = text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
+                return normalized.replace(/[^0-9.]/g, '');
+            };
+
+            const num = parseFloat(parseInput(val)) || 0;
+            const convertedVal = mode === 'oldToNew' ? num / RATE : num * RATE;
+            const liraNewBase = mode === 'oldToNew' ? convertedVal : num;
+
+            const breakdown = useMemo(() => {
+                let current = liraNewBase;
+                const result = [];
+                if (current > 0) {
+                    DENOMS.forEach(d => {
+                        const count = Math.floor(current / d.v);
+                        if (count > 0) {
+                            result.push({ ...d, count });
+                            current = Math.round((current - count * d.v) * 100) / 100;
+                        }
+                    });
+                }
+                return result;
+            }, [liraNewBase]);
+
+            return (
+                <div className="app-container space-y-6">
+                    {/* Header */}
+                    <div className="flex justify-between items-center">
+                        <div className="font-black text-2xl text-indigo-600">دليل الليرة</div>
+                        <div className="bg-slate-200 p-1 rounded-2xl flex">
+                            <button onClick={() => setMode('oldToNew')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${mode === 'oldToNew' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>قديم</button>
+                            <button onClick={() => setMode('newToOld')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${mode === 'newToOld' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>جديد</button>
+                        </div>
+                    </div>
+
+                    {/* Main Input */}
+                    <div className="glass-card p-6">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">المبلغ ({mode === 'oldToNew' ? 'ل.س قديمة' : 'ليرة جديدة'})</div>
+                        <input 
+                            type="text" 
+                            inputMode="decimal"
+                            value={val}
+                            onChange={(e) => setVal(e.target.value)}
+                            placeholder="0.00"
+                            className="input-field"
+                        />
+                        <div className="mt-4 pt-4 border-t border-slate-50">
+                            <div className="text-[10px] font-bold text-slate-400">النتيجة ({mode === 'oldToNew' ? 'ليرة جديدة' : 'ل.س قديمة'})</div>
+                            <div className="text-3xl font-black text-indigo-600">{convertedVal.toLocaleString('ar-EG')}</div>
+                        </div>
+                    </div>
+
+                    {/* Currencies */}
+                    <div className="space-y-3">
+                        <h3 className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-widest">تحويل العملات</h3>
+                        <div className="grid-currencies">
+                            {Object.keys(DEFAULT_RATES).map(code => {
+                                const rate = rates[code]?.mid;
+                                const result = (rate && liraNewBase > 0) ? (liraNewBase / rate).toFixed(2) : "0.00";
+                                return (
+                                    <div key={code} className="glass-card p-4 flex flex-col justify-between h-24">
+                                        <div className="text-xs font-black text-slate-300">{code}</div>
+                                        <div className="text-xl font-black text-indigo-600">{result}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Breakdown */}
+                    {breakdown.length > 0 && (
+                        <div className="space-y-3 pb-10">
+                            <h3 className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-widest">توزيع الفئات</h3>
+                            <div className="space-y-2">
+                                {breakdown.map(b => (
+                                    <div key={b.v} className="glass-card p-3 flex items-center justify-between border-r-4 border-indigo-500">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-2xl">{b.s}</span>
+                                            <div>
+                                                <div className="font-black text-lg">{b.v}</div>
+                                                <div className="text-[10px] text-slate-400 font-bold">{b.n}</div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-indigo-600 text-white font-black px-3 py-1 rounded-lg">× {b.count}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

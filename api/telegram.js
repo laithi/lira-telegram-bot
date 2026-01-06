@@ -66,7 +66,7 @@ const TRANSLATIONS = {
     modeNewToOld: "من جديد لقديم",
     fxBtn: "💱 تحويل للعملات",
     fxCalcTitle: "تحويل للعملات الأجنبية",
-    fxInputLabel: "الأصل",
+    fxInputLabel: "المبلغ المدخل",
     fxEqLabel: "المعادل",
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
@@ -103,7 +103,7 @@ const TRANSLATIONS = {
     modeNewToOld: "New → Old",
     fxBtn: "💱 FX Conversion",
     fxCalcTitle: "FX Conversion Result",
-    fxInputLabel: "Source",
+    fxInputLabel: "Input Amount",
     fxEqLabel: "Eq",
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
@@ -224,9 +224,11 @@ function buildFxMessage(lang, s, ratesJson) {
   
   const originalAmount = s.lastAmount;
   const isCurrentlyOld = s.mode === "oldToNew";
+  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
 
   const lines = [`*${t.fxCalcTitle}*`, ""];
-  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}*`);
+  // ذكر نوع الليرة (قديمة/جديدة) في رسالة تحويل العملات
+  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`);
   lines.push("ــــــــــــــــــــ");
 
   let printed = 0;
@@ -326,13 +328,13 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup).catch(()=>{});
 });
 
-// تعديل زر الوضع لمسح البيانات وطلب مبلغ جديد
+// تعديل زر الوضع: يرسل رسالة جديدة بدلاً من تعديل الحالية للحفاظ على السجل
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
   s.mode = ctx.match[1];
   
-  // مسح البيانات السابقة
+  // مسح البيانات السابقة للعملية الجديدة
   s.lastAmount = null;
   s.lastResult = null;
 
@@ -341,9 +343,10 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   const rates = await fetchRates();
   const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
   
-  const msg = `*${t.title}*\n${t.subtitle}\n\n⚙️ الوضع الحالي: *${modeText}*\n\n${t.askForAmount}\n\n${formatRatesBlock(s.lang, rates)}`;
+  const msg = `*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع إلى: *${modeText}*\n\n${t.askForAmount}\n\n${formatRatesBlock(s.lang, rates)}`;
   
-  return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+  // نستخدم reply بدلاً من edit لضمان عدم حذف النتيجة السابقة
+  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
 });
 
 bot.action("refreshRates", async (ctx) => {
@@ -380,4 +383,3 @@ export default async function handler(req, res) {
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
 }
-

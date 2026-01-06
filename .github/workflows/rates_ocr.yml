@@ -23,7 +23,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run parser (txt -> json)
+      - name: Ensure rates.txt exists
+        run: |
+          ls -la
+          if [ ! -f "rates.txt" ]; then
+            echo "ERROR: rates.txt not found at repo root."
+            exit 1
+          fi
+
+      - name: Build rates.json (txt -> json)
         run: |
           python scripts/extract_rates.py
 

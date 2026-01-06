@@ -5,6 +5,7 @@ on:
     paths:
       - "latest.jpg"
       - "scripts/**"
+      - "requirements.txt"
       - ".github/workflows/rates_ocr.yml"
   workflow_dispatch:
 
@@ -18,12 +19,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system deps (tesseract)
+      - name: Ensure latest.jpg exists
+        run: |
+          ls -la
+          if [ ! -f "latest.jpg" ]; then
+            echo "ERROR: latest.jpg not found at repo root."
+            echo "Make sure the file is exactly named: latest.jpg (lowercase) and located in the root."
+            exit 1
+          fi
+
+      - name: Install system deps (tesseract + languages)
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
           sudo apt-get install -y tesseract-ocr-ara
           sudo apt-get install -y tesseract-ocr-eng
+          echo "=== Tesseract Version ==="
+          tesseract --version
+          echo "=== Available OCR Languages ==="
+          tesseract --list-langs
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,7 +53,7 @@ jobs:
         run: |
           python scripts/extract_rates.py
 
-      - name: Commit rates.json if changed
+      - name: Commit outputs (rates.json / ocr.txt) if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

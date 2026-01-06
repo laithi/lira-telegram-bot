@@ -13,7 +13,7 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- Denominations Data ---
+// --- البيانات (الفئات النقدية) ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
@@ -71,7 +71,8 @@ const TRANSLATIONS = {
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
     fxDualNew: "بـالجديدة تشتري",
-    fxDualOld: "بـالقديمة تشتري"
+    fxDualOld: "بـالقديمة تشتري",
+    askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:"
   },
   en: {
     title: "Lira Guide",
@@ -107,11 +108,12 @@ const TRANSLATIONS = {
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
     fxDualNew: "With NEW you buy",
-    fxDualOld: "With OLD you buy"
+    fxDualOld: "With OLD you buy",
+    askForAmount: "Please enter the amount to convert now:"
   },
 };
 
-// --- State Management ---
+// --- إدارة الحالة ---
 const userStates = new Map();
 function getUS(id) {
   if (!userStates.has(id)) {
@@ -125,7 +127,7 @@ function getUS(id) {
   return userStates.get(id);
 }
 
-// --- Keyboards ---
+// --- لوحات المفاتيح ---
 function getKeyboard(id) {
   const s = getUS(id);
   const t = TRANSLATIONS[s.lang];
@@ -149,7 +151,7 @@ function getKeyboard(id) {
   ]);
 }
 
-// --- Utils ---
+// --- مساعدات ---
 function normalizeDigits(str) {
   return String(str)
     .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d)
@@ -179,7 +181,7 @@ function formatDMY_HM(iso) {
   };
 }
 
-// --- Core Calculation ---
+// --- العمليات الحسابية ---
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -199,7 +201,7 @@ function calc(mode, amount) {
   return { resVal, remaining, dist, isOldToNew };
 }
 
-// --- Rates Fetching ---
+// --- جلب الأسعار ---
 let RATES_CACHE = { data: null, fetchedAt: 0 };
 const RATES_TTL = 60000;
 
@@ -214,7 +216,7 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- FX Logic (Corrected Dual Result) ---
+// --- منطق تحويل العملات الأجنبية ---
 function buildFxMessage(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
@@ -222,12 +224,7 @@ function buildFxMessage(lang, s, ratesJson) {
   
   const originalAmount = s.lastAmount;
   const isCurrentlyOld = s.mode === "oldToNew";
-  
-  // Logic: 
-  // 1. If user entered 1000 SYP (Old) -> How much USD? 
-  // 2. If user entered 1000 Lira (New) -> How much USD?
-  // We calculate both scenarios for the numerical value 'originalAmount'
-  
+
   const lines = [`*${t.fxCalcTitle}*`, ""];
   lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}*`);
   lines.push("ــــــــــــــــــــ");
@@ -238,11 +235,7 @@ function buildFxMessage(lang, s, ratesJson) {
     if (!mid || mid <= 0) continue;
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
-    
-    // Result if the amount is considered NEW (JSON rates are per 1 New Lira)
     const resultAsNew = originalAmount / mid;
-    
-    // Result if the amount is considered OLD (USD price in Old = mid * 100)
     const resultAsOld = originalAmount / (mid * RATE);
 
     lines.push(`${flag}  *${code}*`);
@@ -256,7 +249,7 @@ function buildFxMessage(lang, s, ratesJson) {
   return lines.join("\n").trim();
 }
 
-// --- Message Builders ---
+// --- بناء الرسائل ---
 function formatRatesBlock(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -295,7 +288,6 @@ function buildResultMessage(lang, mode, amount, res, ratesJson) {
   if (!res.dist.length) lines.push("—");
   else {
     for (const p of res.dist) {
-      // Format: Symbol  Value  x  Count
       lines.push(`${p.s}   *${p.v}* ×   ${p.count}`);
     }
   }
@@ -313,7 +305,7 @@ function buildResultMessage(lang, mode, amount, res, ratesJson) {
   return lines.join("\n");
 }
 
-// --- Bot Actions & Handlers ---
+// --- المعالجات ---
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates();
@@ -334,17 +326,24 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup).catch(()=>{});
 });
 
+// تعديل زر الوضع لمسح البيانات وطلب مبلغ جديد
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
+  const t = TRANSLATIONS[s.lang];
   s.mode = ctx.match[1];
-  await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  if (s.lastAmount) {
-    s.lastResult = calc(s.mode, s.lastAmount);
-    const rates = await fetchRates();
-    const msg = buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult, rates);
-    return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
-  }
-  return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup).catch(()=>{});
+  
+  // مسح البيانات السابقة
+  s.lastAmount = null;
+  s.lastResult = null;
+
+  await ctx.answerCbQuery(t.settingsUpdated);
+  
+  const rates = await fetchRates();
+  const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
+  
+  const msg = `*${t.title}*\n${t.subtitle}\n\n⚙️ الوضع الحالي: *${modeText}*\n\n${t.askForAmount}\n\n${formatRatesBlock(s.lang, rates)}`;
+  
+  return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
 });
 
 bot.action("refreshRates", async (ctx) => {
@@ -376,7 +375,6 @@ bot.on("text", async (ctx) => {
   return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult, rates), getKeyboard(ctx.from.id));
 });
 
-// --- Vercel Export ---
 export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);

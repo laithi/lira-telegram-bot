@@ -264,9 +264,13 @@ function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
 
   const isOldToNew = mode === "oldToNew";
 
-  // Convert BOTH amounts to OLD SYP as base
-  const inputOldSyp = isOldToNew ? inputAmount : (inputAmount * RATE);
-  const eqOldSyp = isOldToNew ? (resVal * RATE) : resVal;
+  // ✅ القاعدة الصحيحة:
+  // أسعار mid في rates.json هي "ليرة جديدة لكل 1 عملة أجنبية"
+  // لذلك لازم نحول (المدخل + الصافي) إلى "ليرة جديدة" ثم نقسم على mid.
+
+  const inputNewLira = isOldToNew ? (inputAmount / RATE) : inputAmount;
+
+  const eqNewLira = isOldToNew ? resVal : (resVal / RATE);
 
   const rates = ratesJson?.rates || {};
 
@@ -281,8 +285,8 @@ function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
     if (mid == null || !Number.isFinite(Number(mid)) || Number(mid) <= 0) continue;
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
-    const inputFx = inputOldSyp / Number(mid);
-    const eqFx = eqOldSyp / Number(mid);
+    const inputFx = inputNewLira / Number(mid);
+    const eqFx = eqNewLira / Number(mid);
 
     lines.push(`${flag}  *${code}*`);
     lines.push(`${t.amountFxInput}: ${nfEN.format(inputFx)}`);
@@ -293,7 +297,11 @@ function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
   }
 
   if (printed === 0) {
-    lines.push(lang === "ar" ? "لا يمكن حساب التحويل الآن (أسعار غير متاحة)." : "Cannot calculate now (rates not available).");
+    lines.push(
+      lang === "ar"
+        ? "لا يمكن حساب التحويل الآن (أسعار غير متاحة)."
+        : "Cannot calculate now (rates not available)."
+    );
   }
 
   return lines.join("\n").trim();
@@ -312,11 +320,6 @@ function buildStartMessage(lang, ratesJson) {
   ].join("\n");
 }
 
-/**
- * ✅ CHANGE HERE:
- * We moved:
- * - Breakdown + Change note BEFORE FX conversions
- */
 function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfmt = nf(lang);
@@ -334,7 +337,7 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   lines.push(`• ${t.equivalent}: *${nfmt.format(resultObj.resVal)}* ${outUnit}`);
   lines.push("");
 
-  // ✅ 1) Breakdown FIRST
+  // 1) Breakdown
   lines.push(`*${t.breakdownTitle}*`);
   lines.push(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld);
   lines.push("");
@@ -344,11 +347,11 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   } else {
     for (const p of resultObj.dist) {
       const icon = p.s || "💵";
-      lines.push(`${p.v} - ${p.n[lang]} × ${p.count} ${icon}`);
+      lines.push(`${icon} ${p.v} - ${p.n[lang]} × ${p.count}`);
     }
   }
 
-  // ✅ 2) Change note directly after breakdown (like you want)
+  // 2) Change note
   if (resultObj.remaining > 0) {
     lines.push("");
     lines.push(`*${t.changeNote}*`);
@@ -371,11 +374,11 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   }
 
   lines.push("");
-  // ✅ 3) FX conversions AFTER breakdown + change note
+  // 3) FX conversions
   lines.push(formatBothAmountsInFx(lang, mode, amount, resultObj.resVal, ratesJson));
   lines.push("");
 
-  // ✅ 4) Keep FX rates list as-is
+  // 4) Rates list
   lines.push(formatRatesBlock(lang, ratesJson));
   lines.push("");
   lines.push(t.sendAnother);
@@ -464,4 +467,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).send("ok");
-                       }
+}

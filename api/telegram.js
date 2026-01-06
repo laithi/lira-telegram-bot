@@ -58,9 +58,13 @@ const TRANSLATIONS = {
     modeNewToOldChecked: "✅ من جديد لقديم",
     modeOldToNew: "من قديم لجديد",
     modeNewToOld: "من جديد لقديم",
-    amountFxTitle: "تحويل للعملات الأجنبية",
-    amountFxInput: "Input",
-    amountFxEq: "Equivalent",
+    fxBtn: "💱 تحويل للعملات",
+    fxCalcTitle: "تحويل للعملات الأجنبية",
+    fxCalcHint: "سيتم استخدام آخر مبلغ أدخلته.",
+    fxInputLabel: "المدخل",
+    fxEqLabel: "المعادل",
+    fxNoLast: "مافي مبلغ سابق. ابعت رقم أولاً 🙏",
+    fxNoRatesNow: "لا يمكن حساب التحويل الآن (أسعار غير متاحة).",
   },
   en: {
     title: "Lira Guide",
@@ -89,9 +93,13 @@ const TRANSLATIONS = {
     modeNewToOldChecked: "✅ New → Old",
     modeOldToNew: "Old → New",
     modeNewToOld: "New → Old",
-    amountFxTitle: "Converted to FX",
-    amountFxInput: "Input",
-    amountFxEq: "Equivalent",
+    fxBtn: "💱 Convert to FX",
+    fxCalcTitle: "Converted to FX",
+    fxCalcHint: "Using your last entered amount.",
+    fxInputLabel: "Input",
+    fxEqLabel: "Equivalent",
+    fxNoLast: "No previous amount. Send a number first 🙏",
+    fxNoRatesNow: "Cannot calculate now (rates not available).",
   },
 };
 
@@ -99,7 +107,13 @@ const TRANSLATIONS = {
 const userStates = new Map();
 function getUS(id) {
   if (!userStates.has(id)) {
-    userStates.set(id, { lang: "ar", mode: "oldToNew", lastAmount: null, lastResult: null });
+    userStates.set(id, {
+      lang: "ar",
+      mode: "oldToNew",
+      lastAmount: null,
+      lastResult: null,
+      lastMsgId: null,
+    });
   }
   return userStates.get(id);
 }
@@ -128,8 +142,9 @@ function getKeyboard(id) {
     ],
     [
       Markup.button.callback(t.refreshRates, "refreshRates"),
-      Markup.button.webApp(t.openMiniApp, APP_URL),
+      Markup.button.callback(t.fxBtn, "showFx"),
     ],
+    [Markup.button.webApp(t.openMiniApp, APP_URL)],
   ]);
 }
 
@@ -258,24 +273,29 @@ function formatRatesBlock(lang, ratesJson) {
   return lines.join("\n").trim();
 }
 
-function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
+function buildFxMessageFromLast(lang, mode, lastAmount, lastResult, ratesJson) {
   const t = TRANSLATIONS[lang];
+  const nfmt = nf(lang);
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const isOldToNew = mode === "oldToNew";
 
-  // ✅ القاعدة الصحيحة:
-  // أسعار mid في rates.json هي "ليرة جديدة لكل 1 عملة أجنبية"
-  // لذلك لازم نحول (المدخل + الصافي) إلى "ليرة جديدة" ثم نقسم على mid.
+  const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
+  const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
 
-  const inputNewLira = isOldToNew ? (inputAmount / RATE) : inputAmount;
-
-  const eqNewLira = isOldToNew ? resVal : (resVal / RATE);
+  // ✅ prices are in NEW Lira per 1 FX, so convert amounts to NEW Lira first:
+  const inputNewLira = isOldToNew ? lastAmount / RATE : lastAmount;
+  const eqNewLira = isOldToNew ? lastResult.resVal : lastResult.resVal / RATE;
 
   const rates = ratesJson?.rates || {};
 
   const lines = [];
-  lines.push(`*${t.amountFxTitle}*`);
+  lines.push(`*${t.fxCalcTitle}*`);
+  lines.push(t.fxCalcHint);
+  lines.push("");
+
+  lines.push(`• ${t.inputAmount}: *${nfmt.format(lastAmount)}* ${inUnit}`);
+  lines.push(`• ${t.equivalent}: *${nfmt.format(lastResult.resVal)}* ${outUnit}`);
   lines.push("");
 
   let printed = 0;
@@ -285,23 +305,20 @@ function formatBothAmountsInFx(lang, mode, inputAmount, resVal, ratesJson) {
     if (mid == null || !Number.isFinite(Number(mid)) || Number(mid) <= 0) continue;
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
+
     const inputFx = inputNewLira / Number(mid);
     const eqFx = eqNewLira / Number(mid);
 
     lines.push(`${flag}  *${code}*`);
-    lines.push(`${t.amountFxInput}: ${nfEN.format(inputFx)}`);
-    lines.push(`${t.amountFxEq}: ${nfEN.format(eqFx)}`);
+    lines.push(`${t.fxInputLabel}: ${nfEN.format(inputFx)}`);
+    lines.push(`${t.fxEqLabel}: ${nfEN.format(eqFx)}`);
     lines.push("");
 
     printed++;
   }
 
   if (printed === 0) {
-    lines.push(
-      lang === "ar"
-        ? "لا يمكن حساب التحويل الآن (أسعار غير متاحة)."
-        : "Cannot calculate now (rates not available)."
-    );
+    lines.push(t.fxNoRatesNow);
   }
 
   return lines.join("\n").trim();
@@ -337,7 +354,7 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   lines.push(`• ${t.equivalent}: *${nfmt.format(resultObj.resVal)}* ${outUnit}`);
   lines.push("");
 
-  // 1) Breakdown
+  // Breakdown
   lines.push(`*${t.breakdownTitle}*`);
   lines.push(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld);
   lines.push("");
@@ -351,7 +368,7 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
     }
   }
 
-  // 2) Change note
+  // Change note
   if (resultObj.remaining > 0) {
     lines.push("");
     lines.push(`*${t.changeNote}*`);
@@ -374,11 +391,7 @@ function buildResultMessage(lang, mode, amount, resultObj, ratesJson) {
   }
 
   lines.push("");
-  // 3) FX conversions
-  lines.push(formatBothAmountsInFx(lang, mode, amount, resultObj.resVal, ratesJson));
-  lines.push("");
-
-  // 4) Rates list
+  // Keep FX rates list only (no FX conversions here now)
   lines.push(formatRatesBlock(lang, ratesJson));
   lines.push("");
   lines.push(t.sendAnother);
@@ -399,10 +412,15 @@ bot.action(/setLang:(.*)/, async (ctx) => {
 
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
 
-  if (s.lastAmount !== null && s.lastResult) {
+  if (s.lastAmount !== null && s.lastResult && s.lastMsgId) {
     const rates = await fetchRates(false);
     const msg = buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult, rates);
-    return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
+    try {
+      return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) });
+    } catch (e) {
+      // fallback: just update buttons
+      return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
+    }
   }
 
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
@@ -412,6 +430,8 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1] === "newToOld" ? "newToOld" : "oldToNew";
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
+
+  // ✅ لا تغيّر نص الرسالة عند تغيير نوع التحويل
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup);
 });
 
@@ -432,6 +452,23 @@ bot.action("refreshRates", async (ctx) => {
   });
 });
 
+// ✅ زر جديد: تحويل للعملات (يرسل رسالة منفصلة)
+bot.action("showFx", async (ctx) => {
+  const s = getUS(ctx.from.id);
+  const t = TRANSLATIONS[s.lang];
+
+  await ctx.answerCbQuery();
+
+  if (s.lastAmount === null || !s.lastResult) {
+    return ctx.reply(t.fxNoLast, getKeyboard(ctx.from.id));
+  }
+
+  const rates = await fetchRates(false);
+  const msg = buildFxMessageFromLast(s.lang, s.mode, s.lastAmount, s.lastResult, rates);
+
+  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+});
+
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
   const amount = parseAmount(ctx.message.text);
@@ -445,7 +482,14 @@ bot.on("text", async (ctx) => {
   const rates = await fetchRates(false);
   const msg = buildResultMessage(s.lang, s.mode, amount, resultObj, rates);
 
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  const sent = await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+
+  // حفظ آخر رسالة نتيجة (للتحديث عند تغيير اللغة أو تحديث الأسعار)
+  if (sent && sent.message_id) {
+    s.lastMsgId = sent.message_id;
+  }
+
+  return;
 });
 
 // --- Vercel handler ---

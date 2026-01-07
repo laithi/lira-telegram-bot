@@ -13,7 +13,7 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- البيانات (الفئات النقدية) ---
+// --- Denominations Data ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
@@ -65,12 +65,12 @@ const TRANSLATIONS = {
     modeOldToNew: "من قديم لجديد",
     modeNewToOld: "من جديد لقديم",
     fxBtn: "💱 تحويل للعملات",
-    fxCalcTitle: "تحويل للعملات الأجنبية",
-    fxInputLabel: "المبلغ المدخل",
+    fxCalcTitle: "أسعار الصرف وتحويل المبلغ",
+    fxInputLabel: "المبلغ المستخدم للتحويل",
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
-    fxDualNew: "بـالجديدة تشتري",
-    fxDualOld: "بـالقديمة تشتري",
+    fxDualNew: "بالجديدة تشتري",
+    fxDualOld: "بالقديمة تشتري",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
     ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*."
   },
@@ -102,8 +102,8 @@ const TRANSLATIONS = {
     modeOldToNew: "Old → New",
     modeNewToOld: "New → Old",
     fxBtn: "💱 FX Conversion",
-    fxCalcTitle: "FX Conversion Result",
-    fxInputLabel: "Input Amount",
+    fxCalcTitle: "Exchange Rates & Conversion",
+    fxInputLabel: "Amount Used",
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
     fxDualNew: "With NEW you buy",
@@ -162,13 +162,11 @@ function nf(lang, val) {
 function pad2(n) { return String(n).padStart(2, "0"); }
 
 /**
- * Syria Time (GMT+3) Correction Logic
+ * Get Dynamic Syria Time (GMT+3)
  */
-function formatDMY_HM(iso) {
-  if (!iso) return { date: null, time: null };
-  const d = new Date(iso);
-  // Manual offset for Syria GMT+3
-  const syriaTime = new Date(d.getTime() + (3 * 60 * 60 * 1000));
+function getSyriaTime() {
+  const nowUTC = new Date();
+  const syriaTime = new Date(nowUTC.getTime() + (3 * 60 * 60 * 1000));
   return { 
     date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth()+1)}:${syriaTime.getUTCFullYear()}`, 
     time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}` 
@@ -188,14 +186,50 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- Rate Block Component ---
-function formatRatesBlock(lang, ratesJson) {
+// --- Dynamic FX & Rates Combined Message ---
+function buildFxAndRatesMessage(lang, s, ratesJson) {
+  const t = TRANSLATIONS[lang];
+  const rates = ratesJson?.rates || {};
+  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  
+  // Calculate time dynamically at call
+  const { date, time } = getSyriaTime();
+  
+  const originalAmount = s.lastAmount;
+  const isCurrentlyOld = s.mode === "oldToNew";
+  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
+
+  const lines = [`*${t.fxCalcTitle}*`];
+  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
+  lines.push("", `💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`, "ــــــــــــــــــــ");
+
+  let printed = 0;
+  for (const code of ORDERED_CODES) {
+    const mid = rates?.[code]?.mid;
+    if (!mid || mid <= 0) continue;
+    const flag = FLAG_BY_CODE[code] || "🏳️";
+    
+    const resultAsNew = originalAmount / mid;
+    const resultAsOld = originalAmount / (mid * RATE);
+
+    lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
+    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
+    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
+    lines.push("");
+    printed++;
+  }
+  if (!printed) lines.push(t.fxNoRatesNow);
+  return lines.join("\n").trim();
+}
+
+// --- Dynamic Rate Only Block ---
+function formatRatesOnly(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const { date, time } = formatDMY_HM(ratesJson?.generated_at_utc);
+  const { date, time } = getSyriaTime();
 
   const lines = [`*${t.fxTitle}*`];
-  if (date) lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
+  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
   lines.push("");
 
   const rates = ratesJson?.rates || {};
@@ -206,7 +240,7 @@ function formatRatesBlock(lang, ratesJson) {
   return lines.join("\n").trim();
 }
 
-// --- Result Message (Without Table) ---
+// --- Result Message ---
 function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
@@ -233,37 +267,6 @@ function buildResultMessage(lang, mode, amount, res) {
 
   lines.push("", "ــــــــــــــــــــ", "", t.ratesNote, "", t.sendAnother);
   return lines.join("\n");
-}
-
-// --- FX Calc Message ---
-function buildFxMessage(lang, s, ratesJson) {
-  const t = TRANSLATIONS[lang];
-  const rates = ratesJson?.rates || {};
-  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  
-  const originalAmount = s.lastAmount;
-  const isCurrentlyOld = s.mode === "oldToNew";
-  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
-
-  const lines = [`*${t.fxCalcTitle}*`, ""];
-  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`);
-  lines.push("ــــــــــــــــــــ");
-
-  let printed = 0;
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (!mid || mid <= 0) continue;
-    const flag = FLAG_BY_CODE[code] || "🏳️";
-    const resultAsNew = originalAmount / mid;
-    const resultAsOld = originalAmount / (mid * RATE);
-    lines.push(`${flag}  *${code}*`);
-    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
-    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
-    lines.push("");
-    printed++;
-  }
-  if (!printed) lines.push(t.fxNoRatesNow);
-  return lines.join("\n").trim();
 }
 
 // --- Calc Helper ---
@@ -315,7 +318,7 @@ bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates(true);
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  return ctx.replyWithMarkdown(formatRatesBlock(s.lang, rates), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(formatRatesOnly(s.lang, rates), getKeyboard(ctx.from.id));
 });
 
 bot.action("showFx", async (ctx) => {
@@ -323,7 +326,7 @@ bot.action("showFx", async (ctx) => {
   if (!s.lastAmount) return ctx.answerCbQuery(TRANSLATIONS[s.lang].fxNoLast);
   const rates = await fetchRates();
   await ctx.answerCbQuery();
-  return ctx.replyWithMarkdown(buildFxMessage(s.lang, s, rates), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(buildFxAndRatesMessage(s.lang, s, rates), getKeyboard(ctx.from.id));
 });
 
 bot.on("text", async (ctx) => {
@@ -338,4 +341,4 @@ export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-      }
+    }

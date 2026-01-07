@@ -22,7 +22,7 @@
             touch-action: manipulation;
         }
         .tg-card { background: var(--tg-theme-secondary-bg-color, white); border-radius: 24px; }
-        .tg-button { background: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, white); }
+        .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, white); }
         .input-field { font-size: 3.5rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; }
         .grid-currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     </style>
@@ -79,6 +79,7 @@
         function App() {
             const [val, setVal] = useState('');
             const [mode, setMode] = useState('oldToNew');
+            // تم ضبط اللغة الافتراضية على العربية 'ar' مباشرة
             const [lang, setLang] = useState('ar');
             const [rates, setRates] = useState({});
             const inputRef = useRef(null);
@@ -88,7 +89,7 @@
                 if (tg) {
                     tg.ready();
                     tg.expand();
-                    if (tg.initDataUnsafe?.user?.language_code === 'en') setLang('en');
+                    // تم إزالة شرط التنبؤ بلغة المستخدم من تلغرام لإبقاء العربية كأساسية
                 }
 
                 fetch("https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json")

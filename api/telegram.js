@@ -1,6 +1,5 @@
 import { Telegraf, Markup } from "telegraf";
 
-
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
@@ -72,7 +71,8 @@ const TRANSLATIONS = {
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
     fxDualNew: "بـالجديدة تشتري",
     fxDualOld: "بـالقديمة تشتري",
-    askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:"
+    askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
+    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*."
   },
   en: {
     title: "Lira Guide",
@@ -108,7 +108,8 @@ const TRANSLATIONS = {
     fxNoRatesNow: "FX service unavailable.",
     fxDualNew: "With NEW you buy",
     fxDualOld: "With OLD you buy",
-    askForAmount: "Please enter the amount to convert now:"
+    askForAmount: "Please enter the amount to convert now:",
+    ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*."
   },
 };
 
@@ -159,33 +160,19 @@ function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 function pad2(n) { return String(n).padStart(2, "0"); }
+
+/**
+ * Syria Time (GMT+3) Correction Logic
+ */
 function formatDMY_HM(iso) {
   if (!iso) return { date: null, time: null };
   const d = new Date(iso);
+  // Manual offset for Syria GMT+3
+  const syriaTime = new Date(d.getTime() + (3 * 60 * 60 * 1000));
   return { 
-    date: `${pad2(d.getUTCDate())}:${pad2(d.getUTCMonth()+1)}:${d.getUTCFullYear()}`, 
-    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}` 
+    date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth()+1)}:${syriaTime.getUTCFullYear()}`, 
+    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}` 
   };
-}
-
-// --- Calculation ---
-function calc(mode, amount) {
-  const isOldToNew = mode === "oldToNew";
-  let resVal = isOldToNew ? amount / RATE : amount * RATE;
-  resVal = Math.round(resVal * 100) / 100;
-
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-  let remaining = resVal;
-  let dist = [];
-
-  for (const d of activeDenoms) {
-    const count = Math.floor(remaining / d.v);
-    if (count > 0) {
-      dist.push({ ...d, count });
-      remaining = Math.round((remaining - count * d.v) * 100) / 100;
-    }
-  }
-  return { resVal, remaining, dist, isOldToNew };
 }
 
 // --- Fetch Rates ---
@@ -201,44 +188,7 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- FX Message ---
-function buildFxMessage(lang, s, ratesJson) {
-  const t = TRANSLATIONS[lang];
-  const rates = ratesJson?.rates || {};
-  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  
-  const originalAmount = s.lastAmount;
-  const isCurrentlyOld = s.mode === "oldToNew";
-  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
-
-  const lines = [`*${t.fxCalcTitle}*`, ""];
-  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`);
-  lines.push("ــــــــــــــــــــ");
-
-  let printed = 0;
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (!mid || mid <= 0) continue;
-
-    const flag = FLAG_BY_CODE[code] || "🏳️";
-    
-    // Logic: result = amount / price
-    // But if considered Old, the price is effectively 100x higher
-    const resultAsNew = originalAmount / mid;
-    const resultAsOld = originalAmount / (mid * RATE);
-
-    lines.push(`${flag}  *${code}*`);
-    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
-    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
-    lines.push("");
-    printed++;
-  }
-
-  if (!printed) lines.push(t.fxNoRatesNow);
-  return lines.join("\n").trim();
-}
-
-// --- Result Message ---
+// --- Rate Block Component ---
 function formatRatesBlock(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -256,7 +206,8 @@ function formatRatesBlock(lang, ratesJson) {
   return lines.join("\n").trim();
 }
 
-function buildResultMessage(lang, mode, amount, res, ratesJson) {
+// --- Result Message (Without Table) ---
+function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
@@ -280,16 +231,64 @@ function buildResultMessage(lang, mode, amount, res, ratesJson) {
     else lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining/RATE).toFixed(2)}* ${t.newUnit}).`);
   }
 
-  lines.push("", "ــــــــــــــــــــ", "", formatRatesBlock(lang, ratesJson), "", t.sendAnother);
+  lines.push("", "ــــــــــــــــــــ", "", t.ratesNote, "", t.sendAnother);
   return lines.join("\n");
+}
+
+// --- FX Calc Message ---
+function buildFxMessage(lang, s, ratesJson) {
+  const t = TRANSLATIONS[lang];
+  const rates = ratesJson?.rates || {};
+  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  
+  const originalAmount = s.lastAmount;
+  const isCurrentlyOld = s.mode === "oldToNew";
+  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
+
+  const lines = [`*${t.fxCalcTitle}*`, ""];
+  lines.push(`💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`);
+  lines.push("ــــــــــــــــــــ");
+
+  let printed = 0;
+  for (const code of ORDERED_CODES) {
+    const mid = rates?.[code]?.mid;
+    if (!mid || mid <= 0) continue;
+    const flag = FLAG_BY_CODE[code] || "🏳️";
+    const resultAsNew = originalAmount / mid;
+    const resultAsOld = originalAmount / (mid * RATE);
+    lines.push(`${flag}  *${code}*`);
+    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
+    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
+    lines.push("");
+    printed++;
+  }
+  if (!printed) lines.push(t.fxNoRatesNow);
+  return lines.join("\n").trim();
+}
+
+// --- Calc Helper ---
+function calc(mode, amount) {
+  const isOldToNew = mode === "oldToNew";
+  let resVal = isOldToNew ? amount / RATE : amount * RATE;
+  resVal = Math.round(resVal * 100) / 100;
+  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+  let remaining = resVal;
+  let dist = [];
+  for (const d of activeDenoms) {
+    const count = Math.floor(remaining / d.v);
+    if (count > 0) {
+      dist.push({ ...d, count });
+      remaining = Math.round((remaining - count * d.v) * 100) / 100;
+    }
+  }
+  return { resVal, remaining, dist, isOldToNew };
 }
 
 // --- Handlers ---
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
-  const rates = await fetchRates();
   const t = TRANSLATIONS[s.lang];
-  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}\n\n${formatRatesBlock(s.lang, rates)}`, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
@@ -297,8 +296,7 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
   if (s.lastAmount) {
-    const rates = await fetchRates();
-    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult, rates), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
   }
   return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup).catch(()=>{});
 });
@@ -307,20 +305,17 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
   s.mode = ctx.match[1];
-  s.lastAmount = null; s.lastResult = null; // Clear previous amount for new session
+  s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(t.settingsUpdated);
-  const rates = await fetchRates();
   const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
-  // Send NEW message instead of editing (History preservation)
-  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع إلى: *${modeText}*\n\n${t.askForAmount}\n\n${formatRatesBlock(s.lang, rates)}`, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع إلى: *${modeText}*\n\n${t.askForAmount}`, getKeyboard(ctx.from.id));
 });
 
 bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates(true);
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  const msg = s.lastAmount ? buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult, rates) : `*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n${formatRatesBlock(s.lang, rates)}`;
-  return ctx.editMessageText(msg, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+  return ctx.replyWithMarkdown(formatRatesBlock(s.lang, rates), getKeyboard(ctx.from.id));
 });
 
 bot.action("showFx", async (ctx) => {
@@ -336,12 +331,11 @@ bot.on("text", async (ctx) => {
   const amount = parseAmount(ctx.message.text);
   if (!amount) return ctx.reply(TRANSLATIONS[s.lang].invalid);
   s.lastAmount = amount; s.lastResult = calc(s.mode, amount);
-  const rates = await fetchRates();
-  return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult, rates), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult), getKeyboard(ctx.from.id));
 });
 
 export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-}
+      }

@@ -256,7 +256,10 @@ function buildResultMessage(lang, mode, amount, res) {
 
   if (!res.dist.length) lines.push("—");
   else {
-    for (const p of res.dist) lines.push(`${p.s}   *${p.v}* ×   ${p.count}`);
+    // MODIFIED: Added padding (.padEnd(4, ' ')) to align the breakdown neatly
+    for (const p of res.dist) {
+      lines.push(`${p.s}   *${String(p.v).padEnd(4, ' ')}* ×   ${p.count}`);
+    }
   }
 
   if (res.remaining > 0) {
@@ -298,10 +301,16 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
+  
+  const t = TRANSLATIONS[s.lang];
+  
+  // MODIFIED: Updates the text message immediately to reflect the new language
   if (s.lastAmount) {
     return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+  } else {
+    // If no calculation is present, update the welcome message to the new language
+    return ctx.editMessageText(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
   }
-  return ctx.editMessageReplyMarkup(getKeyboard(ctx.from.id).reply_markup).catch(()=>{});
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
@@ -341,4 +350,4 @@ export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-    }
+}

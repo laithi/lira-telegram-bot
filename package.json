@@ -1,6 +1,7 @@
 {
   "name": "syrian-lira-bot",
   "version": "1.0.0",
+  "type": "module",
   "main": "telegram.js",
   "dependencies": {
     "telegraf": "^4.12.0"

@@ -1,149 +1,402 @@
-import { Telegraf, Markup } from "telegraf";
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>دليل الليرة الشامل</title>
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { 
+            background-color: var(--tg-theme-bg-color, #f8fafc); 
+            color: var(--tg-theme-text-color, #0f172a); 
+            margin: 0; padding: 0; 
+            touch-action: manipulation;
+        }
+        .tg-card { background: var(--tg-theme-secondary-bg-color, white); border-radius: 24px; }
+        .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, white); }
+        .input-field { font-size: 3.5rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; }
+        .grid-currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mode-switch-btn { transition: all 0.3s ease; }
+        
+        .tab-active { color: #4f46e5; border-bottom: 3px solid #4f46e5; }
+        .tab-inactive { color: #94a3b8; }
+        .sticky-tabs { position: sticky; top: 0; z-index: 50; background-color: var(--tg-theme-bg-color, #f8fafc); }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body onscroll="document.activeElement.blur()">
+    <div id="root"></div>
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
-const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
-if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
+        // --- Inline Icons to avoid Lucide Ref errors ---
+        const IconTrash = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        );
+        const IconCoins = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18.06"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg>
+        );
 
-const bot = new Telegraf(BOT_TOKEN);
-const RATE = 100;
+        const RATE = 100;
+        const DENOMS_NEW_CONVERTER = [
+            { v: 500, s: '🌾', n: { ar: 'سنابل', en: 'Wheat' } },
+            { v: 200, s: '🫒', n: { ar: 'زيتون', en: 'Olive' } },
+            { v: 100, s: '☁️', n: { ar: 'قطن', en: 'Cotton' } },
+            { v: 50, s: '🍊', n: { ar: 'حمضيات', en: 'Citrus' } },
+            { v: 25, s: '🍇', n: { ar: 'عنب', en: 'Grapes' } },
+            { v: 10, s: '🌼', n: { ar: 'ياسمين', en: 'Jasmine' } }
+        ];
+        const DENOMS_OLD_CONVERTER = [
+            { v: 5000, s: '💶', n: { ar: 'خمسة آلاف', en: '5000' } },
+            { v: 2000, s: '💶', n: { ar: 'ألفين', en: '2000' } },
+            { v: 1000, s: '💵', n: { ar: 'ألف', en: '1000' } },
+            { v: 500, s: '💵', n: { ar: 'خمسمئة', en: '500' } }
+        ];
 
-// --- Denominations Data (Matched with your provided symbols) ---
-const DENOMS_NEW = [
-  { v: 500, s: '🌾', n: { ar: 'سنابل', en: 'Wheat' } },
-  { v: 200, s: '🫒', n: { ar: 'زيتون', en: 'Olive' } },
-  { v: 100, s: '☁️', n: { ar: 'قطن', en: 'Cotton' } },
-  { v: 50, s: '🍊', n: { ar: 'حمضيات', en: 'Citrus' } },
-  { v: 25, s: '🍇', n: { ar: 'عنب', en: 'Grapes' } },
-  { v: 10, s: '🌼', n: { ar: 'ياسمين', en: 'Jasmine' } },
-  { v: 5, s: '🖐️', n: { ar: 'خمسة', en: 'Five' } },
-  { v: 2, s: '✌️', n: { ar: 'ليرتان', en: 'Two' } },
-  { v: 1, s: '☝️', n: { ar: 'ليرة', en: 'One' } }
-];
+        const DENOMS_NEW_CHANGE = [500, 200, 100, 50, 25, 20, 10, 5, 2, 1];
+        const DENOMS_OLD_CHANGE = [5000, 2000, 1000, 500, 200];
+        const FLAG_BY_CODE = { USD: "🇺🇸", AED: "🇦🇪", SAR: "🇸🇦", EUR: "🇪🇺", KWD: "🇰🇼", SEK: "🇸🇪", GBP: "🇬🇧", JOD: "🇯🇴" };
+        const ORDERED_CODES = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 
-const DENOMS_OLD = [
-  { v: 5000, s: '💶', n: { ar: 'خمسة آلاف', en: '5000' } },
-  { v: 2000, s: '💶', n: { ar: 'ألفين', en: '2000' } },
-  { v: 1000, s: '💵', n: { ar: 'ألف', en: '1000' } },
-  { v: 500, s: '💵', n: { ar: 'خمسمئة', en: '500' } },
-  { v: 200, s: '💷', n: { ar: 'مئتان', en: '200' } },
-  { v: 100, s: '💷', n: { ar: 'مئة', en: '100' } }
-];
+        const TEXTS = {
+            ar: {
+                title: "دليل الليرة",
+                tab1: "المحول الذكي",
+                tab2: "حاسبة الفكة",
+                old: "قديم", new: "جديد",
+                inputLabel: (m) => `المبلغ (${m === 'oldToNew' ? 'ل.س قديمة' : 'ليرة جديدة'})`,
+                resultLabel: (m) => `المعادل (${m === 'oldToNew' ? 'جديد' : 'قديم'})`,
+                fxTitle: "تحويل للعملات الأجنبية",
+                breakdownTitle: "توزيع الفئات النقدية",
+                placeholder: "0.00",
+                emptyBreakdown: "أدخل مبلغاً لعرض التوزيع..",
+                leftoverMsg: (v, p) => `بقي ${v} ليرة جديدة، تدفع بقيمة ${p} ل.س قديمة.`,
+                leftoverMsgOld: (v, p) => `بقي ${v} ل.س قديمة، تدفع بقيمة ${p} ليرة جديدة.`
+            },
+            en: {
+                title: "Lira Guide",
+                tab1: "Smart Converter",
+                tab2: "Change Calc",
+                old: "Old", new: "New",
+                inputLabel: (m) => `Amount (${m === 'oldToNew' ? 'Old SYP' : 'New Lira'})`,
+                resultLabel: (m) => `Equivalent (${m === 'oldToNew' ? 'New' : 'Old'})`,
+                fxTitle: "Currency Conversion",
+                breakdownTitle: "Banknote Breakdown",
+                placeholder: "0.00",
+                emptyBreakdown: "Enter amount to see breakdown..",
+                leftoverMsg: (v, p) => `Remaining ${v} New Lira, pay as ${p} Old SYP.`,
+                leftoverMsgOld: (v, p) => `Remaining ${v} Old SYP, pay as ${p} New Lira.`
+            }
+        };
 
-const TRANSLATIONS = {
-  ar: {
-    title: "دليل الليرة",
-    subtitle: "دليل العملة السورية الجديدة",
-    inputAmount: "المبلغ المدخل",
-    equivalent: "المعادل",
-    breakdownTitle: "توزيع الفئات النقدية",
-    changeNote: "ملاحظة الفراطة",
-    oldUnit: "ل.س قديمة",
-    newUnit: "ليرة جديدة",
-    openApp: "📱 فتح التطبيق المصغر",
-    invalid: "يرجى إرسال مبلغ صحيح 🙏",
-    qty: "عدد"
-  },
-  en: {
-    title: "Lira Guide",
-    subtitle: "New Syrian Currency Guide",
-    inputAmount: "Input Amount",
-    equivalent: "Equivalent",
-    breakdownTitle: "Banknote Breakdown",
-    changeNote: "Change Note",
-    oldUnit: "Old SYP",
-    newUnit: "New Lira",
-    openApp: "📱 Open Mini App",
-    invalid: "Please send a valid amount 🙏",
-    qty: "Qty"
-  }
-};
+        const SmartConverter = ({ lang, t, rates }) => {
+            const [val, setVal] = useState('');
+            const [mode, setMode] = useState('oldToNew');
+            const inputRef = useRef(null);
+            const isAr = lang === 'ar';
 
-const userStates = new Map();
-function getUS(id) {
-  if (!userStates.has(id)) {
-    userStates.set(id, { lang: "ar", mode: "oldToNew" });
-  }
-  return userStates.get(id);
-}
+            const toggleMode = (newMode) => {
+                if (newMode !== mode) {
+                    setMode(newMode);
+                    setVal('');
+                    if (inputRef.current) inputRef.current.focus();
+                }
+            };
 
-function calc(mode, amount) {
-  const isOldToNew = mode === 'oldToNew';
-  let resVal = isOldToNew ? amount / RATE : amount * RATE;
-  resVal = Math.round(resVal * 100) / 100;
+            const cleanInput = (txt) => {
+                const normalized = txt.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] || d);
+                return normalized.replace(/[^0-9.]/g, '');
+            };
 
-  const denoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-  let current = resVal;
-  const list = [];
+            const num = parseFloat(cleanInput(val)) || 0;
+            const convertedVal = mode === 'oldToNew' ? (num / RATE) : (num * RATE);
+            const liraNewBase = mode === 'oldToNew' ? convertedVal : num;
 
-  for (const d of denoms) {
-    const count = Math.floor((current + 0.0001) / d.v);
-    if (count > 0) {
-      list.push({ ...d, count });
-      current = Math.round((current - count * d.v) * 100) / 100;
-    }
-  }
-  return { resVal, list, rem: current };
-}
+            const breakdown = useMemo(() => {
+                let current = mode === 'oldToNew' ? convertedVal : num;
+                const denoms = mode === 'oldToNew' ? DENOMS_NEW_CONVERTER : DENOMS_OLD_CONVERTER;
+                const res = [];
+                if (current > 0) {
+                    denoms.forEach(d => {
+                        const count = Math.floor(current / d.v);
+                        if (count > 0) {
+                            res.push({ ...d, count });
+                            current = Math.round((current - count * d.v) * 100) / 100;
+                        }
+                    });
+                }
+                return { list: res, rem: current };
+            }, [num, mode, convertedVal]);
 
-function buildMsg(id, amount, res) {
-  const s = getUS(id);
-  const t = TRANSLATIONS[s.lang];
-  const isOldToNew = s.mode === 'oldToNew';
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center px-2">
+                        <div className="font-black text-2xl text-indigo-600">{t.tab1}</div>
+                        <div className="bg-black/5 p-1 rounded-2xl flex">
+                            <button onClick={() => toggleMode('oldToNew')} className={`px-3 py-1 rounded-xl text-[10px] font-bold transition-all mode-switch-btn ${mode === 'oldToNew' ? 'tg-button shadow-md' : 'opacity-40'}`}>
+                                {t.old}
+                            </button>
+                            <button onClick={() => toggleMode('newToOld')} className={`px-3 py-1 rounded-xl text-[10px] font-bold transition-all mode-switch-btn ${mode === 'newToOld' ? 'tg-button shadow-md' : 'opacity-40'}`}>
+                                {t.new}
+                            </button>
+                        </div>
+                    </div>
 
-  let m = `*${t.title}*\n${t.subtitle}\n\n`;
-  m += `• ${t.inputAmount}: *${amount.toLocaleString()}* ${isOldToNew ? t.oldUnit : t.newUnit}\n`;
-  m += `• ${t.equivalent}: *${res.resVal.toLocaleString()}* ${isOldToNew ? t.newUnit : t.oldUnit}\n\n`;
+                    <div className="tg-card p-6 shadow-sm border border-black/5">
+                        <div className="text-[10px] font-black opacity-30 uppercase mb-2 tracking-widest">{t.inputLabel(mode)}</div>
+                        <input ref={inputRef} type="text" inputMode="decimal" value={val} onChange={(e) => setVal(cleanInput(e.target.value))} placeholder={t.placeholder} className={`input-field text-indigo-900 ${isAr ? 'text-right' : 'text-left'}`} />
+                        <div className="mt-6 pt-5 border-t border-black/5">
+                            <div className="text-[10px] font-black opacity-30 uppercase mb-1 tracking-widest">{t.resultLabel(mode)}</div>
+                            <div className="text-4xl font-black text-indigo-600">
+                                {convertedVal.toLocaleString(isAr ? 'ar-SY' : 'en-US', { maximumFractionDigits: 2 })}
+                            </div>
+                        </div>
+                    </div>
 
-  if (res.rem > 0) {
-    m += `*${t.changeNote}:*\n`;
-    if (isOldToNew) {
-      m += `بقي *${res.rem}* ${t.newUnit}، تدفع بالقديم (*${Math.round(res.rem * RATE)}* ${t.oldUnit}).\n\n`;
-    } else {
-      m += `بقي *${res.rem}* ${t.oldUnit}، تدفع بالجديد (*${(res.rem / RATE).toFixed(2)}* ${t.newUnit}).\n\n`;
-    }
-  }
+                    {breakdown.rem > 0 && (
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-start animate-pulse">
+                            <span className="text-xl">⚠️</span>
+                            <div className="text-amber-900 text-[11px] font-bold leading-relaxed">
+                                {mode === 'oldToNew' ? t.leftoverMsg(breakdown.rem, Math.round(breakdown.rem * RATE).toLocaleString()) : t.leftoverMsgOld(breakdown.rem, (breakdown.rem / RATE).toFixed(2))}
+                            </div>
+                        </div>
+                    )}
 
-  m += `*${t.breakdownTitle}:*\n`;
-  if (res.list.length === 0) m += "—";
-  else {
-    res.list.forEach(item => {
-      const n = item.n[s.lang];
-      m += `${item.s} *${n}* ${item.v} ⬅️ *${item.count}* ${t.qty}\n`;
-    });
-  }
+                    <div className="space-y-3">
+                        <h3 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">{t.breakdownTitle}</h3>
+                        <div className="space-y-2">
+                            {breakdown.list.length > 0 ? breakdown.list.map(b => (
+                                <div key={b.v} className="tg-card p-4 flex items-center justify-between border border-black/5 shadow-sm">
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-3xl">{b.s}</span>
+                                        <div>
+                                            <div className="font-black text-xl leading-none">{b.v.toLocaleString()}</div>
+                                            <div className="text-[9px] font-bold opacity-40 mt-1">{b.n[lang]}</div>
+                                        </div>
+                                    </div>
+                                    <div className="tg-button px-4 py-1.5 rounded-xl font-black text-lg">× {b.count}</div>
+                                </div>
+                            )) : <div className="text-center py-4 text-slate-300 font-bold text-xs italic opacity-50">{t.emptyBreakdown}</div>}
+                        </div>
+                    </div>
 
-  return m;
-}
+                    <div className="space-y-3 pb-10">
+                        <h3 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">{t.fxTitle}</h3>
+                        <div className="grid-currencies">
+                            {ORDERED_CODES.map(code => {
+                                const rate = rates[code]?.mid;
+                                const resValue = (rate && liraNewBase > 0) ? (liraNewBase / rate).toFixed(2) : "0.00";
+                                return (
+                                    <div key={code} className="tg-card p-4 flex flex-col justify-between h-24 border border-black/5 shadow-sm">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-black opacity-30">{code}</span>
+                                            <span>{FLAG_BY_CODE[code]}</span>
+                                        </div>
+                                        <div className="text-xl font-black text-indigo-600 font-mono">{resValue}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
-bot.on("text", async (ctx) => {
-  const s = getUS(ctx.from.id);
-  const raw = ctx.message.text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]).replace(/,/g, "");
-  const num = parseFloat(raw);
-  
-  if (isNaN(num) || num <= 0) return ctx.reply(TRANSLATIONS[s.lang].invalid);
-  
-  const res = calc(s.mode, num);
-  const keyboard = Markup.inlineKeyboard([
-    [
-      Markup.button.callback(s.mode === 'oldToNew' ? "✅ قديم ← جديد" : "قديم ← جديد", "setMode:oldToNew"),
-      Markup.button.callback(s.mode === 'newToOld' ? "✅ جديد ← قديم" : "جديد ← قديم", "setMode:newToOld")
-    ],
-    [Markup.button.webApp(TRANSLATIONS[s.lang].openApp, APP_URL)]
-  ]);
+        const ChangeCalculator = () => {
+            const [fields, setFields] = useState({ billNew: '', billOld: '', paidNew: '', paidOld: '' });
+            
+            const parseNumbers = (str) => {
+                const map = { '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9' };
+                return str.replace(/[٠-٩]/g, (d) => map[d]).replace(/[^0-9.]/g, '');
+            };
 
-  return ctx.replyWithMarkdown(buildMsg(ctx.from.id, num, res), keyboard);
-});
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                const cleaned = parseNumbers(value);
+                setFields(prev => ({ ...prev, [name]: cleaned }));
+            };
 
-bot.action(/setMode:(.*)/, async (ctx) => {
-  const s = getUS(ctx.from.id);
-  s.mode = ctx.match[1];
-  await ctx.answerCbQuery("تم تغيير الوضع");
-  return ctx.reply("تم التغيير. أرسل المبلغ الجديد الآن:");
-});
+            const handleClear = () => setFields({ billNew: '', billOld: '', paidNew: '', paidOld: '' });
 
-export default async function handler(req, res) {
-  if (req.method === "POST") await bot.handleUpdate(req.body);
-  return res.status(200).send("OK");
-}
+            const totalBillInNew = (parseFloat(fields.billNew) || 0) + ((parseFloat(fields.billOld) || 0) / RATE);
+            const totalPaidInNew = (parseFloat(fields.paidNew) || 0) + ((parseFloat(fields.paidOld) || 0) / RATE);
+            const changeInNew = Math.max(0, totalPaidInNew - totalBillInNew);
+
+            const getBreakdown = useCallback((amount, denoms) => {
+                let remaining = Math.round(amount);
+                const result = [];
+                for (const d of denoms) {
+                    const count = Math.floor(remaining / d);
+                    if (count > 0) {
+                        result.push({ val: d, count });
+                        remaining %= d;
+                    }
+                }
+                return result;
+            }, []);
+
+            const allScenarios = useMemo(() => {
+                if (changeInNew <= 0) return [];
+                const list = [];
+                const standardNew = getBreakdown(changeInNew, DENOMS_NEW_CHANGE);
+                if (standardNew.length > 0) {
+                    list.push({ id: 'new-1', title: 'إرجاع بالجديد', color: 'border-indigo-600', badge: 'bg-indigo-600', items: standardNew.map(i => ({ ...i, type: 'جديدة' })) });
+                }
+                const standardOld = getBreakdown(changeInNew * RATE, DENOMS_OLD_CHANGE);
+                if (standardOld.length > 0) {
+                    list.push({ id: 'old-1', title: 'إرجاع بالقديم', color: 'border-emerald-600', badge: 'bg-emerald-600', items: standardOld.map(i => ({ ...i, type: 'قديمة' })) });
+                }
+                return list;
+            }, [changeInNew, getBreakdown]);
+
+            return (
+                <div className="space-y-6 pb-20 animate-fade-in">
+                    <div className="flex justify-between items-center pt-2 px-2">
+                        <div className="flex items-center gap-2 text-indigo-600">
+                             <h1 className="text-2xl font-black">حاسبة الفكة</h1>
+                        </div>
+                        <button onClick={handleClear} className="p-3 bg-white rounded-2xl shadow-sm text-red-500 border border-slate-100 flex items-center justify-center">
+                            <IconTrash />
+                        </button>
+                    </div>
+
+                    <div className="grid gap-4">
+                        <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                            <p className="text-center text-[10px] font-black text-indigo-600 uppercase mb-3 tracking-widest">المبلغ المطلوب (الفاتورة)</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <input type="text" inputMode="decimal" name="billNew" value={fields.billNew} onChange={handleChange} placeholder="0 جديد" className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"/>
+                                <input type="text" inputMode="decimal" name="billOld" value={fields.billOld} onChange={handleChange} placeholder="0 قديم" className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"/>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-3xl p-5 shadow-sm border-2 border-emerald-500">
+                            <p className="text-center text-[10px] font-black text-emerald-600 uppercase mb-3 tracking-widest">المبلغ المستلم</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <input type="text" inputMode="decimal" name="paidNew" value={fields.paidNew} onChange={handleChange} placeholder="0 جديد" className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"/>
+                                <input type="text" inputMode="decimal" name="paidOld" value={fields.paidOld} onChange={handleChange} placeholder="0 قديم" className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-[#111827] rounded-[2.5rem] p-8 text-center shadow-xl relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-amber-500"></div>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">الباقي للزبون</p>
+                        <div className="text-6xl font-black text-emerald-400 mb-1 tabular-nums">{changeInNew.toLocaleString()}</div>
+                        <p className="text-white/60 text-sm font-bold">ليرة جديدة</p>
+                        <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-white">
+                            <span className="text-2xl font-black tabular-nums">{(Math.round(changeInNew * RATE)).toLocaleString()}</span>
+                            <span className="text-white/40 text-xs font-bold">ليرة قديمة</span>
+                        </div>
+                    </div>
+
+                    {allScenarios.length > 0 ? (
+                        <div className="space-y-4">
+                            {allScenarios.map((scen) => (
+                                <div key={scen.id} className={`rounded-[2rem] border-2 p-5 bg-white shadow-sm ${scen.color}`}>
+                                    <div className="mb-4">
+                                        <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black text-white ${scen.badge}`}>{scen.title}</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {scen.items.map((item, idx) => (
+                                            <div key={idx} className="bg-slate-50 rounded-xl p-3 flex justify-between items-center border border-slate-100">
+                                                <div className="flex items-center text-slate-900 gap-2">
+                                                    <span className="text-lg font-black tabular-nums">{item.val.toLocaleString()}</span>
+                                                    <span className="text-xs font-bold text-slate-500">ليرة {item.type}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold text-slate-400">عدد</span>
+                                                    <span className="text-2xl font-black text-indigo-600 tabular-nums">{item.count}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : changeInNew > 0 && (
+                         <div className="py-10 text-center opacity-30">
+                            <p className="text-sm font-black uppercase tracking-widest text-slate-900">لا يوجد فكة كافية لتغطية هذا المبلغ</p>
+                         </div>
+                    )}
+
+                    {changeInNew <= 0 && (
+                        <div className="py-16 text-center opacity-10">
+                            <div className="flex justify-center mb-4"><IconCoins /></div>
+                            <p className="text-sm font-black uppercase tracking-widest leading-loose text-slate-900">أدخل المبالغ<br/>لعرض احتمالات الفكة</p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('converter');
+            const [lang, setLang] = useState('ar');
+            const [rates, setRates] = useState({});
+
+            useEffect(() => {
+                const tg = window.Telegram?.WebApp;
+                if (tg) { tg.ready(); tg.expand(); }
+                fetch("https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json")
+                    .then(res => res.json())
+                    .then(data => { if(data.rates) setRates(data.rates); })
+                    .catch(() => {});
+            }, []);
+
+            const t = TEXTS[lang];
+            const isAr = lang === 'ar';
+
+            return (
+                <div className={`max-w-md mx-auto min-h-screen pb-10 ${isAr ? 'rtl text-right' : 'ltr text-left'}`}>
+                    <div className="px-4 py-3 flex justify-between items-center border-b border-black/5">
+                        <div className="font-black text-xl text-indigo-600 tracking-tighter">{t.title}</div>
+                        <button onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} className="bg-black/5 px-4 py-1.5 rounded-full text-[11px] font-black">
+                            {lang === 'ar' ? 'English' : 'العربية'}
+                        </button>
+                    </div>
+
+                    <div className="sticky-tabs flex px-4 border-b border-black/5">
+                        <button 
+                            onClick={() => setActiveTab('converter')}
+                            className={`flex-1 py-4 text-sm font-black transition-all ${activeTab === 'converter' ? 'tab-active' : 'tab-inactive'}`}
+                        >
+                            {t.tab1}
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('change')}
+                            className={`flex-1 py-4 text-sm font-black transition-all ${activeTab === 'change' ? 'tab-active' : 'tab-inactive'}`}
+                        >
+                            {t.tab2}
+                        </button>
+                    </div>
+
+                    <div className="p-4 mt-2">
+                        {activeTab === 'converter' ? (
+                            <SmartConverter lang={lang} t={t} rates={rates} />
+                        ) : (
+                            <ChangeCalculator />
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

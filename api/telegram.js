@@ -4,85 +4,124 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
 
+const DEFAULT_RATES_URL =
+  process.env.RATES_URL ||
+  "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
+
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// الفئات الجديدة - بدون أسماء
+// --- Denominations Data (تم إزالة فئات 5 و 2 و 1 بناءً على طلبك) ---
 const DENOMS_NEW = [
-  { v: 500, s: "🌾" },
-  { v: 200, s: "🫒" },
-  { v: 100, s: "☁️" },
-  { v: 50,  s: "🍊" },
-  { v: 25,  s: "🍇" },
-  { v: 10,  s: "🌼" }
+  { v: 500, s: "🌾", n: { ar: "سنابل القمح", en: "Wheat" } },
+  { v: 200, s: "🫒", n: { ar: "أغصان الزيتون", en: "Olive" } },
+  { v: 100, s: "☁️", n: { ar: "القطن", en: "Cotton" } },
+  { v: 50,  s: "🍊", n: { ar: "الحمضيات", en: "Citrus" } },
+  { v: 25,  s: "🍇", n: { ar: "العنب", en: "Grapes" } },
+  { v: 10,  s: "🌼", n: { ar: "الياسمين", en: "Jasmine" } }
 ];
 
-// الفئات القديمة - بدون أسماء وبشعار محايد
+// الفئات القديمة (كلها برمز المال العام 💵)
 const DENOMS_OLD = [
-  { v: 5000, s: "💸" },
-  { v: 2000, s: "💸" },
-  { v: 1000, s: "💸" },
-  { v: 500,  s: "💸" },
-  { v: 200,  s: "💸" },
-  { v: 100,  s: "💸" }
+  { v: 5000, s: "💵", n: { ar: "خمسة آلاف", en: "5000" } },
+  { v: 2000, s: "💵", n: { ar: "ألفين",     en: "2000" } },
+  { v: 1000, s: "💵", n: { ar: "ألف",       en: "1000" } },
+  { v: 500,  s: "💵", n: { ar: "خمسمئة",    en: "500" } },
+  { v: 200,  s: "💵", n: { ar: "مئتان",     en: "200" } },
+  { v: 100,  s: "💵", n: { ar: "مئة",       en: "100" } }
 ];
 
 const FLAG_BY_CODE = { 
-  USD: "🇺🇸 Dollar (USD)", 
-  AED: "🇦🇪 Dirham (AED)", 
-  SAR: "🇸🇦 Riyal (SAR)", 
-  EUR: "🇪🇺 Euro (EUR)", 
-  KWD: "🇰🇼 Dinar (KWD)", 
-  SEK: "🇸🇪 Krona (SEK)", 
-  GBP: "🇬🇧 Pound (GBP)", 
-  JOD: "🇯🇴 Dinar (JOD)" 
+  USD: "🇺🇸", AED: "🇦🇪", SAR: "🇸🇦", EUR: "🇪🇺", 
+  KWD: "🇰🇼", SEK: "🇸🇪", GBP: "🇬🇧", JOD: "🇯🇴" 
 };
+const ORDERED_CODES = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 
 const TRANSLATIONS = {
   ar: {
     title: "دليل الليرة",
-    subtitle: "الإصدار الرقمي الموحد",
-    sendAmount: "أرسل مبلغاً للحساب أو اختر الإعدادات:",
-    inputAmount: "المبلغ",
-    equivalent: "المقابل",
-    breakdownTitle: "توزيع الفئات",
-    changeNote: "الفكة المتبقية",
-    sendAnother: "أرسل مبلغاً آخر.",
+    subtitle: "دليل العملة السورية الجديدة",
+    sendAmount: "اختر الإعدادات أو أرسل مبلغاً للحساب:",
+    inputAmount: "المبلغ المدخل",
+    equivalent: "القيمة المقابلة",
+    breakdownTitle: "توزيع الفئات النقدية",
+    breakdownSubNew: "حسب فئات الإصدار الجديد",
+    breakdownSubOld: "حسب فئات الإصدار القديم",
+    changeNote: "ملاحظة الفراطة",
+    sendAnother: "أرسل مبلغاً آخر للحساب.",
     invalid: "يرجى إرسال رقم صحيح 🙏",
-    oldUnit: "قديم",
-    newUnit: "جديد",
-    openMiniApp: "📱 التطبيق",
-    refreshRates: "🔄 الأسعار",
-    fxBtn: "💱 التحويل",
-    countLabel: "قطع",
-    settingsUpdated: "تم ✅"
+    oldUnit: "ل.س قديمة",
+    newUnit: "ليرة جديدة",
+    openMiniApp: "📱 فتح التطبيق المصغر",
+    refreshRates: "🔄 تحديث الأسعار",
+    fxTitle: "أسعار العملات (وسطي)",
+    dateLabel: "التاريخ",
+    timeLabel: "الساعة",
+    noRates: "الأسعار غير متاحة حالياً.",
+    settingsUpdated: "تم التحديث ✅",
+    langAR: "✅ العربية",
+    langEN: "EN",
+    modeOldToNewChecked: "✅ من قديم لجديد",
+    modeNewToOldChecked: "✅ من جديد لقديم",
+    modeOldToNew: "من قديم لجديد",
+    modeNewToOld: "من جديد لقديم",
+    fxBtn: "💱 تحويل للعملات",
+    fxCalcTitle: "أسعار الصرف وتحويل المبلغ",
+    fxInputLabel: "المبلغ المستخدم للتحويل",
+    fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
+    fxNoRatesNow: "خدمة الصرف غير متاحة.",
+    fxDualNew: "بالجديدة تشتري",
+    fxDualOld: "بالقديمة تشتري",
+    askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
+    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
+    countLabel: "عدد"
   },
   en: {
     title: "Lira Guide",
-    subtitle: "Digital Edition",
-    sendAmount: "Send amount or choose settings:",
-    inputAmount: "Amount",
+    subtitle: "New Syrian Currency Guide",
+    sendAmount: "Choose settings or send amount:",
+    inputAmount: "Input Amount",
     equivalent: "Equivalent",
-    breakdownTitle: "Breakdown",
-    changeNote: "Remaining Change",
-    sendAnother: "Send another amount.",
-    invalid: "Invalid number 🙏",
-    oldUnit: "Old",
-    newUnit: "New",
-    openMiniApp: "📱 App",
-    refreshRates: "🔄 Rates",
-    fxBtn: "💱 FX",
-    countLabel: "Qty",
-    settingsUpdated: "Updated ✅"
+    breakdownTitle: "Banknote Breakdown",
+    breakdownSubNew: "NEW issuance denominations",
+    breakdownSubOld: "OLD denominations",
+    changeNote: "Change Note",
+    sendAnother: "Send another number.",
+    invalid: "Please send a valid number 🙏",
+    oldUnit: "Old SYP",
+    newUnit: "New Lira",
+    openMiniApp: "📱 Open App",
+    refreshRates: "🔄 Refresh",
+    fxTitle: "FX Rates",
+    dateLabel: "Date",
+    timeLabel: "Time",
+    noRates: "Rates unavailable.",
+    settingsUpdated: "Updated ✅",
+    langAR: "AR",
+    langEN: "✅ EN",
+    modeOldToNewChecked: "✅ Old → New",
+    modeNewToOldChecked: "✅ New → Old",
+    modeOldToNew: "Old → New",
+    modeNewToOld: "New → Old",
+    fxBtn: "💱 FX Conversion",
+    fxCalcTitle: "Exchange Rates & Conversion",
+    fxInputLabel: "Amount Used",
+    fxNoLast: "No amount entered yet 🙏",
+    fxNoRatesNow: "FX service unavailable.",
+    fxDualNew: "With NEW you buy",
+    fxDualOld: "With OLD you buy",
+    askForAmount: "Please enter the amount to convert now:",
+    ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
+    countLabel: "Qty"
   }
 };
 
 const userStates = new Map();
 function getUS(id) {
   if (!userStates.has(id)) {
-    userStates.set(id, { lang: "ar", mode: "oldToNew", lastAmount: null });
+    userStates.set(id, { lang: "ar", mode: "oldToNew", lastAmount: null, lastResult: null });
   }
   return userStates.get(id);
 }
@@ -92,128 +131,133 @@ function getKeyboard(id) {
   const t = TRANSLATIONS[s.lang];
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(s.lang === "ar" ? "✅ العربية" : "AR", "setLang:ar"),
-      Markup.button.callback(s.lang !== "ar" ? "✅ EN" : "EN", "setLang:en"),
+      Markup.button.callback(s.lang === "ar" ? t.langAR : "AR", "setLang:ar"),
+      Markup.button.callback(s.lang !== "ar" ? t.langEN : "EN", "setLang:en"),
     ],
     [
-      Markup.button.callback(s.mode === "oldToNew" ? "✅ قديم ⬅️ جديد" : "قديم ⬅️ جديد", "setMode:oldToNew"),
-      Markup.button.callback(s.mode === "newToOld" ? "✅ جديد ⬅️ قديم" : "جديد ⬅️ قديم", "setMode:newToOld"),
+      Markup.button.callback(s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeOldToNew, "setMode:oldToNew"),
+      Markup.button.callback(s.mode !== "oldToNew" ? t.modeNewToOldChecked : t.modeNewToOld, "setMode:newToOld"),
     ],
     [
       Markup.button.callback(t.refreshRates, "refreshRates"),
       Markup.button.callback(t.fxBtn, "showFx"),
-    ]
+    ],
+    [Markup.button.webApp(t.openMiniApp, APP_URL)],
   ]);
+}
+
+function nf(lang, val) {
+  return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
-  let targetVal = isOldToNew ? amount / RATE : amount * RATE;
-  
-  // التقريب لمنع مشاكل الفاصلة العائمة
-  targetVal = Math.round(targetVal * 100) / 100;
+  let resVal = isOldToNew ? amount / RATE : amount * RATE;
+  resVal = Math.round(resVal * 100) / 100;
 
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-  let remainingForDist = targetVal;
+  let currentTotal = resVal;
   let dist = [];
 
-  // توزيع الفئات
   for (const d of activeDenoms) {
-    const count = Math.floor((remainingForDist + 0.0001) / d.v);
+    const count = Math.floor((currentTotal + 0.0001) / d.v);
     if (count > 0) {
       dist.push({ ...d, count });
-      remainingForDist = Math.round((remainingForDist - count * d.v) * 100) / 100;
+      currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
     }
   }
 
-  return { targetVal, remaining: remainingForDist, dist };
+  return { resVal, remaining: currentTotal, dist };
 }
 
-function buildResultMessage(lang, mode, amount) {
+function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
-  const res = calc(mode, amount);
-
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
   const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
 
-  let lines = [
-    `*${t.title}*`,
-    `• ${t.inputAmount}: *${amount}* ${inUnit}`,
-    `• ${t.equivalent}: *${res.targetVal}* ${outUnit}`,
+  const lines = [
+    `*${t.title}*`, `${t.subtitle}`, "",
+    `• ${t.inputAmount}: *${nf(lang, amount)}* ${inUnit}`,
+    `• ${t.equivalent}: *${nf(lang, res.resVal)}* ${outUnit}`,
     ""
   ];
 
-  lines.push(`*${t.breakdownTitle}*:`);
-  if (res.dist.length === 0 && res.remaining === 0) {
+  if (res.remaining > 0) {
+    lines.push(`*${t.changeNote}*`);
+    if (isOldToNew) {
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${Math.round(res.remaining * RATE)}* ${t.oldUnit}).`);
+    } else {
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining / RATE).toFixed(2)}* ${t.newUnit}).`);
+    }
+    lines.push("");
+  }
+
+  lines.push(`*${t.breakdownTitle}*`, `_(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})_`, "");
+
+  if (!res.dist.length) {
     lines.push("—");
   } else {
     for (const p of res.dist) {
-      lines.push(`${p.s} فئة ${p.v} : *${p.count}* ${t.countLabel}`);
+      const name = p.n?.[lang] || p.v;
+      lines.push(`${p.s}  *${name}* ${p.v}  ⬅️  *${p.count}* ${t.countLabel}`);
     }
   }
 
-  if (res.remaining > 0) {
-    lines.push("");
-    lines.push(`*${t.changeNote}*:`);
-    if (isOldToNew) {
-      // إذا كنا نحول لجديد، الباقي يظهر بالجديد وقيمته بالقديم
-      lines.push(`*${res.remaining}* ${t.newUnit} (تعادل *${Math.round(res.remaining * RATE)}* ${t.oldUnit})`);
-    } else {
-      // إذا كنا نحول لقديم، الباقي يظهر بالقديم وقيمته بالجديد
-      lines.push(`*${res.remaining}* ${t.oldUnit} (تعادل *${(res.remaining / RATE).toFixed(2)}* ${t.newUnit})`);
-    }
-  }
-
-  lines.push("", t.sendAnother);
+  lines.push("", "ــــــــــــــــــــ", "", t.sendAnother);
   return lines.join("\n");
 }
 
-bot.start((ctx) => {
+bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
-  ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, getKeyboard(ctx.from.id));
 });
 
-bot.on("text", (ctx) => {
+bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
-  const val = Number(ctx.message.text.replace(/[٠-٩]/g, d => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]).replace(/,/g, ""));
+  const text = ctx.message.text.replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]).replace(/,/g, "").trim();
+  const amount = Number(text);
+  if (isNaN(amount) || amount <= 0) return ctx.reply(TRANSLATIONS[s.lang].invalid);
   
-  if (isNaN(val) || val <= 0) return ctx.reply(TRANSLATIONS[s.lang].invalid);
-  
-  s.lastAmount = val;
-  ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, val), getKeyboard(ctx.from.id));
+  s.lastAmount = amount; 
+  s.lastResult = calc(s.mode, amount);
+  return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult), getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  ctx.editMessageText(TRANSLATIONS[s.lang].sendAmount, getKeyboard(ctx.from.id)).catch(()=>{});
+  if (s.lastAmount) {
+    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+  }
+  return ctx.editMessageText(`*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n${TRANSLATIONS[s.lang].sendAmount}`, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1];
+  s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  ctx.editMessageText(TRANSLATIONS[s.lang].sendAmount, getKeyboard(ctx.from.id)).catch(()=>{});
+  const t = TRANSLATIONS[s.lang];
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`, getKeyboard(ctx.from.id));
 });
 
-bot.action("refreshRates", (ctx) => {
+// وظائف إضافية لتوافق الكود
+bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
-  let msg = `*العملات الأجنبية:*\n\n`;
-  Object.values(FLAG_BY_CODE).forEach(v => msg += `• ${v}\n`);
-  ctx.replyWithMarkdown(msg);
+  await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
+  return ctx.replyWithMarkdown(TRANSLATIONS[s.lang].ratesNote);
 });
 
-bot.action("showFx", (ctx) => {
+bot.action("showFx", async (ctx) => {
   const s = getUS(ctx.from.id);
-  let msg = `*تحويل العملات:*\n\n`;
-  Object.values(FLAG_BY_CODE).forEach(v => msg += `• ${v}\n`);
-  ctx.replyWithMarkdown(msg);
+  await ctx.answerCbQuery();
+  return ctx.replyWithMarkdown(TRANSLATIONS[s.lang].fxCalcTitle);
 });
 
 export default async function handler(req, res) {
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-    }
+        }

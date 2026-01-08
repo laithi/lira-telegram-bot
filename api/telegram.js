@@ -13,17 +13,18 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- Denominations Data (تم إزالة فئات 5 و 2 و 1 نهائياً) ---
+// --- Denominations Data (تم إزالة فئات 5 و 2 و 1 بناءً على طلبك) ---
 const DENOMS_NEW = [
   { v: 500, s: "🌾", n: { ar: "سنابل القمح", en: "Wheat" } },
   { v: 200, s: "🫒", n: { ar: "أغصان الزيتون", en: "Olive" } },
   { v: 100, s: "☁️", n: { ar: "القطن", en: "Cotton" } },
   { v: 50,  s: "🍊", n: { ar: "الحمضيات", en: "Citrus" } },
+  // ✅ change requested: 25 is توت وليس عنب
   { v: 25,  s: "🍓", n: { ar: "توت", en: "Berries" } },
   { v: 10,  s: "🌼", n: { ar: "الياسمين", en: "Jasmine" } }
 ];
 
-// الفئات القديمة (بدون علامة $)
+// الفئات القديمة (تم تغيير الرمز ليكون بدون علامة $)
 const DENOMS_OLD = [
   { v: 5000, s: "🪙", n: { ar: "خمسة آلاف", en: "5000" } },
   { v: 2000, s: "🪙", n: { ar: "ألفين",     en: "2000" } },
@@ -76,7 +77,18 @@ const TRANSLATIONS = {
     fxDualOld: "بالقديمة تشتري",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
     ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
-    countLabel: "عدد"
+    countLabel: "عدد",
+    // ✅ add FX names in Arabic (requested: write name beside symbol)
+    fxName: {
+      USD: "دولار",
+      AED: "درهم",
+      SAR: "ريال",
+      EUR: "يورو",
+      KWD: "دينار",
+      SEK: "كرونة",
+      GBP: "جنيه",
+      JOD: "دينار"
+    }
   },
   en: {
     title: "Lira Guide",
@@ -114,7 +126,18 @@ const TRANSLATIONS = {
     fxDualOld: "With OLD you buy",
     askForAmount: "Please enter the amount to convert now:",
     ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
-    countLabel: "Qty"
+    countLabel: "Qty",
+    // ✅ add FX names in English
+    fxName: {
+      USD: "US Dollar",
+      AED: "UAE Dirham",
+      SAR: "Saudi Riyal",
+      EUR: "Euro",
+      KWD: "Kuwaiti Dinar",
+      SEK: "Swedish Krona",
+      GBP: "British Pound",
+      JOD: "Jordanian Dinar"
+    }
   }
 };
 
@@ -167,9 +190,20 @@ function calc(mode, amount) {
     }
   }
 
-  // FIX: keep only decimals for remaining in oldToNew
   if (isOldToNew && currentTotal >= 1) {
-    currentTotal = Math.round((currentTotal - Math.floor(currentTotal)) * 100) / 100;
+    const EXTRA = [
+      { v: 5, s: "🖐️", n: { ar: "خمسة", en: "Five" } },
+      { v: 2, s: "✌️", n: { ar: "ليرتان", en: "Two" } },
+      { v: 1, s: "☝️", n: { ar: "ليرة", en: "One" } },
+    ];
+
+    for (const d of EXTRA) {
+      const count = Math.floor((currentTotal + 0.0001) / d.v);
+      if (count > 0) {
+        dist.push({ ...d, count });
+        currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
+      }
+    }
   }
 
   return { resVal, remaining: currentTotal, dist };
@@ -200,12 +234,13 @@ function buildResultMessage(lang, mode, amount, res) {
 
   lines.push(`*${t.breakdownTitle}*`, `_(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})_`, "");
 
-  // ✅ ONLY CHANGE: remove names, keep icon + value + count
   if (!res.dist.length) {
     lines.push("—");
   } else {
     for (const p of res.dist) {
-      lines.push(`${p.s}  *${p.v}*  *${p.count}* ${t.countLabel}`);
+      const name = p.n?.[lang] || p.v;
+      // ✅ change requested: remove arrows before count (removed "⬅️")
+      lines.push(`${p.s}  *${name}* ${p.v}  *${p.count}* ${t.countLabel}`);
     }
   }
 
@@ -224,8 +259,8 @@ bot.on("text", async (ctx) => {
   const text = ctx.message.text.replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]).replace(/,/g, "").trim();
   const amount = Number(text);
   if (isNaN(amount) || amount <= 0) return ctx.reply(TRANSLATIONS[s.lang].invalid);
-
-  s.lastAmount = amount;
+  
+  s.lastAmount = amount; 
   s.lastResult = calc(s.mode, amount);
   return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult), getKeyboard(ctx.from.id));
 });
@@ -235,32 +270,18 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
   if (s.lastAmount) {
-    return ctx
-      .editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), {
-        parse_mode: "Markdown",
-        ...getKeyboard(ctx.from.id),
-      })
-      .catch(() => {});
+    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
   }
-  return ctx
-    .editMessageText(
-      `*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n${TRANSLATIONS[s.lang].sendAmount}`,
-      { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }
-    )
-    .catch(() => {});
+  return ctx.editMessageText(`*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n${TRANSLATIONS[s.lang].sendAmount}`, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1];
-  s.lastAmount = null;
-  s.lastResult = null;
+  s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
   const t = TRANSLATIONS[s.lang];
-  return ctx.replyWithMarkdown(
-    `*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`,
-    getKeyboard(ctx.from.id)
-  );
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`, getKeyboard(ctx.from.id));
 });
 
 // وظائف إضافية لتوافق الكود

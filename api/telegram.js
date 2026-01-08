@@ -1,4 +1,5 @@
 import { Telegraf, Markup } from "telegraf";
+
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
@@ -18,19 +19,18 @@ const DENOMS_NEW = [
   { v: 200, s: "🫒", n: { ar: "أغصان الزيتون", en: "Olive" } },
   { v: 100, s: "☁️", n: { ar: "القطن", en: "Cotton" } },
   { v: 50,  s: "🍊", n: { ar: "الحمضيات", en: "Citrus" } },
-  // ✅ change requested: 25 is توت وليس عنب
-  { v: 25,  s: "🍓", n: { ar: "توت", en: "Berries" } },
+  { v: 25,  s: "🍇", n: { ar: "العنب", en: "Grapes" } },
   { v: 10,  s: "🌼", n: { ar: "الياسمين", en: "Jasmine" } }
 ];
 
-// الفئات القديمة (تم تغيير الرمز ليكون بدون علامة $)
+// الفئات القديمة (كلها برمز المال العام 💵)
 const DENOMS_OLD = [
-  { v: 5000, s: "🪙", n: { ar: "خمسة آلاف", en: "5000" } },
-  { v: 2000, s: "🪙", n: { ar: "ألفين",     en: "2000" } },
-  { v: 1000, s: "🪙", n: { ar: "ألف",       en: "1000" } },
-  { v: 500,  s: "🪙", n: { ar: "خمسمئة",    en: "500" } },
-  { v: 200,  s: "🪙", n: { ar: "مئتان",     en: "200" } },
-  { v: 100,  s: "🪙", n: { ar: "مئة",       en: "100" } }
+  { v: 5000, s: "💵", n: { ar: "خمسة آلاف", en: "5000" } },
+  { v: 2000, s: "💵", n: { ar: "ألفين",     en: "2000" } },
+  { v: 1000, s: "💵", n: { ar: "ألف",       en: "1000" } },
+  { v: 500,  s: "💵", n: { ar: "خمسمئة",    en: "500" } },
+  { v: 200,  s: "💵", n: { ar: "مئتان",     en: "200" } },
+  { v: 100,  s: "💵", n: { ar: "مئة",       en: "100" } }
 ];
 
 const FLAG_BY_CODE = { 
@@ -76,18 +76,7 @@ const TRANSLATIONS = {
     fxDualOld: "بالقديمة تشتري",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
     ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
-    countLabel: "عدد",
-    // ✅ add FX names in Arabic (requested: write name beside symbol)
-    fxName: {
-      USD: "دولار",
-      AED: "درهم",
-      SAR: "ريال",
-      EUR: "يورو",
-      KWD: "دينار",
-      SEK: "كرونة",
-      GBP: "جنيه",
-      JOD: "دينار"
-    }
+    countLabel: "عدد"
   },
   en: {
     title: "Lira Guide",
@@ -125,18 +114,7 @@ const TRANSLATIONS = {
     fxDualOld: "With OLD you buy",
     askForAmount: "Please enter the amount to convert now:",
     ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
-    countLabel: "Qty",
-    // ✅ add FX names in English
-    fxName: {
-      USD: "US Dollar",
-      AED: "UAE Dirham",
-      SAR: "Saudi Riyal",
-      EUR: "Euro",
-      KWD: "Kuwaiti Dinar",
-      SEK: "Swedish Krona",
-      GBP: "British Pound",
-      JOD: "Jordanian Dinar"
-    }
+    countLabel: "Qty"
   }
 };
 
@@ -172,6 +150,11 @@ function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 
+/**
+ * ✅ ONLY FIX HERE (no other changes):
+ * - When mode is oldToNew, we also "consume" the integer remainder using 5/2/1
+ *   so leftover becomes only decimals (e.g. 33333 -> 333.33, leftover becomes 0.33 instead of 8.33)
+ */
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -189,6 +172,7 @@ function calc(mode, amount) {
     }
   }
 
+  // ✅ Fix: consume integer remainder with 5/2/1 ONLY for oldToNew
   if (isOldToNew && currentTotal >= 1) {
     const EXTRA = [
       { v: 5, s: "🖐️", n: { ar: "خمسة", en: "Five" } },
@@ -238,8 +222,7 @@ function buildResultMessage(lang, mode, amount, res) {
   } else {
     for (const p of res.dist) {
       const name = p.n?.[lang] || p.v;
-      // ✅ change requested: remove arrows before count (removed "⬅️")
-      lines.push(`${p.s}  *${name}* ${p.v}  *${p.count}* ${t.countLabel}`);
+      lines.push(`${p.s}  *${name}* ${p.v}  ⬅️  *${p.count}* ${t.countLabel}`);
     }
   }
 
@@ -300,4 +283,9 @@ export default async function handler(req, res) {
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
 }
-```0
+
+شكرا الك، هلق ممكن تشيل الاسهم قبل عدد الفئات بقسم توزيع الفئات
+العملة القديمة غير الرمز بشيء اخر لا تظهر اشارة $ فيه.
+اكتب اسم العملة الاجنبية بجانبها مع الرمز.
+الفئة ٢٥ جديدة هي توت وليس عنب غيرها من فضلك
+ارجوك لا تعدل اي شيء غير المطلوب

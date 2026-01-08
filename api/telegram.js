@@ -150,6 +150,11 @@ function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 
+/**
+ * ✅ ONLY FIX HERE (no other changes):
+ * - When mode is oldToNew, we also "consume" the integer remainder using 5/2/1
+ *   so leftover becomes only decimals (e.g. 33333 -> 333.33, leftover becomes 0.33 instead of 8.33)
+ */
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -164,6 +169,23 @@ function calc(mode, amount) {
     if (count > 0) {
       dist.push({ ...d, count });
       currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
+    }
+  }
+
+  // ✅ Fix: consume integer remainder with 5/2/1 ONLY for oldToNew
+  if (isOldToNew && currentTotal >= 1) {
+    const EXTRA = [
+      { v: 5, s: "🖐️", n: { ar: "خمسة", en: "Five" } },
+      { v: 2, s: "✌️", n: { ar: "ليرتان", en: "Two" } },
+      { v: 1, s: "☝️", n: { ar: "ليرة", en: "One" } },
+    ];
+
+    for (const d of EXTRA) {
+      const count = Math.floor((currentTotal + 0.0001) / d.v);
+      if (count > 0) {
+        dist.push({ ...d, count });
+        currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
+      }
     }
   }
 
@@ -260,4 +282,4 @@ bot.action("showFx", async (ctx) => {
 export default async function handler(req, res) {
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-        }
+}

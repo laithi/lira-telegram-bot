@@ -4,43 +4,42 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
 
-const DEFAULT_RATES_URL =
-  process.env.RATES_URL ||
-  "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json";
-
 if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- Denominations Data (تم إضافة كافة الفئات لتقليل الفراطة لأدنى حد) ---
+// --- فئات العملة الجديدة ---
 const DENOMS_NEW = [
-  { v: 500, n: { ar: "سنابل", en: "Wheat" }, s: "🌾" },
-  { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
-  { v: 100, n: { ar: "قطن", en: "Cotton" }, s: "☁️" },
-  { v: 50, n: { ar: "حمضيات", en: "Citrus" }, s: "🍊" },
-  { v: 25, n: { ar: "عنب", en: "Grapes" }, s: "🍇" },
-  { v: 10, n: { ar: "ياسمين", en: "Jasmine" }, s: "🌼" },
-  { v: 5, n: { ar: "خمسة", en: "Five" }, s: "🖐️" },
-  { v: 2, n: { ar: "ليرتان", en: "Two" }, s: "✌️" },
-  { v: 1, n: { ar: "ليرة", en: "One" }, s: "☝️" }
+  { v: 500, s: "🌾", n: { ar: "سنابل القمح", en: "Wheat" } },
+  { v: 200, s: "🫒", n: { ar: "أغصان الزيتون", en: "Olive" } },
+  { v: 100, s: "☁️", n: { ar: "القطن", en: "Cotton" } },
+  { v: 50,  s: "🍊", n: { ar: "الحمضيات", en: "Citrus" } },
+  { v: 25,  s: "🍇", n: { ar: "التوت الشامي", en: "Mulberry" } },
+  { v: 10,  s: "🌼", n: { ar: "الياسمين", en: "Jasmine" } }
 ];
 
+// --- فئات العملة القديمة (تم تغيير الشعار إلى 💸 - أوراق نقدية محايدة بدون أي رموز) ---
 const DENOMS_OLD = [
-  { v: 5000, n: { ar: "خمسة آلاف", en: "5000" }, s: "💶" },
-  { v: 2000, n: { ar: "ألفين", en: "2000" }, s: "💶" },
-  { v: 1000, n: { ar: "ألف", en: "1000" }, s: "💵" },
-  { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" },
-  { v: 200, n: { ar: "مئتان", en: "200" }, s: "💷" },
-  { v: 100, n: { ar: "مئة", en: "100" }, s: "💷" },
-  { v: 50, n: { ar: "خمسون", en: "50" }, s: "🪙" }
+  { v: 5000, s: "💸", n: { ar: "خمسة آلاف", en: "5000" } },
+  { v: 2000, s: "💸", n: { ar: "ألفين",     en: "2000" } },
+  { v: 1000, s: "💸", n: { ar: "ألف",       en: "1000" } },
+  { v: 500,  s: "💸", n: { ar: "خمسمئة",    en: "500" } },
+  { v: 200,  s: "💸", n: { ar: "مئتان",     en: "200" } },
+  { v: 100,  s: "💸", n: { ar: "مئة",       en: "100" } }
 ];
 
+// --- مسميات العملات الأجنبية الكاملة ---
 const FLAG_BY_CODE = { 
-  USD: "🇺🇸", AED: "🇦🇪", SAR: "🇸🇦", EUR: "🇪🇺", 
-  KWD: "🇰🇼", SEK: "🇸🇪", GBP: "🇬🇧", JOD: "🇯🇴" 
+  USD: "🇺🇸 Dollar (USD)", 
+  AED: "🇦🇪 Dirham (AED)", 
+  SAR: "🇸🇦 Riyal (SAR)", 
+  EUR: "🇪🇺 Euro (EUR)", 
+  KWD: "🇰🇼 Dinar (KWD)", 
+  SEK: "🇸🇪 Krona (SEK)", 
+  GBP: "🇬🇧 Pound (GBP)", 
+  JOD: "🇯🇴 Dinar (JOD)" 
 };
-const ORDERED_CODES = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"];
 
 const TRANSLATIONS = {
   ar: {
@@ -59,10 +58,7 @@ const TRANSLATIONS = {
     newUnit: "ليرة جديدة",
     openMiniApp: "📱 فتح التطبيق المصغر",
     refreshRates: "🔄 تحديث الأسعار",
-    fxTitle: "أسعار العملات (وسطي)",
-    dateLabel: "التاريخ",
-    timeLabel: "الساعة",
-    noRates: "الأسعار غير متاحة حالياً.",
+    fxBtn: "💱 تحويل للعملات",
     settingsUpdated: "تم التحديث ✅",
     langAR: "✅ العربية",
     langEN: "EN",
@@ -70,16 +66,8 @@ const TRANSLATIONS = {
     modeNewToOldChecked: "✅ من جديد لقديم",
     modeOldToNew: "من قديم لجديد",
     modeNewToOld: "من جديد لقديم",
-    fxBtn: "💱 تحويل للعملات",
-    fxCalcTitle: "أسعار الصرف وتحويل المبلغ",
-    fxInputLabel: "المبلغ المستخدم للتحويل",
-    fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
-    fxNoRatesNow: "خدمة الصرف غير متاحة.",
-    fxDualNew: "بالجديدة تشتري",
-    fxDualOld: "بالقديمة تشتري",
-    askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
-    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
-    countLabel: "عدد"
+    countLabel: "قطع",
+    ratesNote: "💡 لمشاهدة أسعار الصرف، استخدم زر تحويل العملات."
   },
   en: {
     title: "Lira Guide",
@@ -97,10 +85,7 @@ const TRANSLATIONS = {
     newUnit: "New Lira",
     openMiniApp: "📱 Open App",
     refreshRates: "🔄 Refresh",
-    fxTitle: "FX Rates",
-    dateLabel: "Date",
-    timeLabel: "Time",
-    noRates: "Rates unavailable.",
+    fxBtn: "💱 FX Conversion",
     settingsUpdated: "Updated ✅",
     langAR: "AR",
     langEN: "✅ EN",
@@ -108,16 +93,8 @@ const TRANSLATIONS = {
     modeNewToOldChecked: "✅ New → Old",
     modeOldToNew: "Old → New",
     modeNewToOld: "New → Old",
-    fxBtn: "💱 FX Conversion",
-    fxCalcTitle: "Exchange Rates & Conversion",
-    fxInputLabel: "Amount Used",
-    fxNoLast: "No amount entered yet 🙏",
-    fxNoRatesNow: "FX service unavailable.",
-    fxDualNew: "With NEW you buy",
-    fxDualOld: "With OLD you buy",
-    askForAmount: "Please enter the amount to convert now:",
-    ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
-    countLabel: "Qty"
+    countLabel: "Bills",
+    ratesNote: "💡 Use FX Conversion to see rates."
   }
 };
 
@@ -134,8 +111,8 @@ function getKeyboard(id) {
   const t = TRANSLATIONS[s.lang];
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(s.lang === "ar" ? t.langAR : t.langAR, "setLang:ar"),
-      Markup.button.callback(s.lang !== "ar" ? t.langEN : t.langEN, "setLang:en"),
+      Markup.button.callback(s.lang === "ar" ? t.langAR : "AR", "setLang:ar"),
+      Markup.button.callback(s.lang !== "ar" ? t.langEN : "EN", "setLang:en"),
     ],
     [
       Markup.button.callback(s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeOldToNew, "setMode:oldToNew"),
@@ -163,7 +140,6 @@ function calc(mode, amount) {
   let dist = [];
 
   for (const d of activeDenoms) {
-    // حساب دقيق للعدد مع تجنب مشاكل الفاصلة العائمة
     const count = Math.floor((currentTotal + 0.0001) / d.v);
     if (count > 0) {
       dist.push({ ...d, count });
@@ -190,9 +166,9 @@ function buildResultMessage(lang, mode, amount, res) {
   if (res.remaining > 0) {
     lines.push(`*${t.changeNote}*`);
     if (isOldToNew) {
-      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${Math.round(res.remaining * RATE)}* ${t.oldUnit}).`);
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تُدفع بالقديم (*${Math.round(res.remaining * RATE)}* ${t.oldUnit}).`);
     } else {
-      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining / RATE).toFixed(2)}* ${t.newUnit}).`);
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تُدفع بالجديد (*${(res.remaining / RATE).toFixed(2)}* ${t.newUnit}).`);
     }
     lines.push("");
   }
@@ -204,7 +180,7 @@ function buildResultMessage(lang, mode, amount, res) {
   } else {
     for (const p of res.dist) {
       const name = p.n?.[lang] || p.v;
-      lines.push(`${p.s}  *${name}* ${p.v}  ⬅️  *${p.count}* ${t.countLabel}`);
+      lines.push(`${p.s} *${name}* ${p.v} : *${p.count}* ${t.countLabel}`);
     }
   }
 
@@ -244,10 +220,31 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   s.mode = ctx.match[1];
   s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  return ctx.replyWithMarkdown(`*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`, getKeyboard(ctx.from.id));
+  const t = TRANSLATIONS[s.lang];
+  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`, getKeyboard(ctx.from.id));
+});
+
+bot.action("refreshRates", async (ctx) => {
+  const s = getUS(ctx.from.id);
+  await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
+  let fxMsg = `*العملات الأجنبية المتاحة:*\n\n`;
+  Object.values(FLAG_BY_CODE).forEach(val => {
+    fxMsg += `• ${val}\n`;
+  });
+  return ctx.replyWithMarkdown(fxMsg);
+});
+
+bot.action("showFx", async (ctx) => {
+  const s = getUS(ctx.from.id);
+  await ctx.answerCbQuery();
+  let fxMsg = `*العملات الأجنبية المدعومة:*\n\n`;
+  Object.values(FLAG_BY_CODE).forEach(val => {
+    fxMsg += `• ${val}\n`;
+  });
+  return ctx.replyWithMarkdown(fxMsg);
 });
 
 export default async function handler(req, res) {
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-    }
+}

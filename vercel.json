@@ -5,11 +5,9 @@
       "maxDuration": 10
     }
   },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/telegram.js"
-    }
+  "routes": [
+    { "src": "/api/telegram", "dest": "/api/telegram.js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
-

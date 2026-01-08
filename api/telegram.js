@@ -72,7 +72,8 @@ const TRANSLATIONS = {
     fxDualNew: "بالجديدة تشتري",
     fxDualOld: "بالقديمة تشتري",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
-    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*."
+    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
+    countLabel: "عدد"
   },
   en: {
     title: "Lira Guide",
@@ -109,7 +110,8 @@ const TRANSLATIONS = {
     fxDualNew: "With NEW you buy",
     fxDualOld: "With OLD you buy",
     askForAmount: "Please enter the amount to convert now:",
-    ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*."
+    ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
+    countLabel: "Qty"
   },
 };
 
@@ -161,9 +163,6 @@ function nf(lang, val) {
 }
 function pad2(n) { return String(n).padStart(2, "0"); }
 
-/**
- * Get Dynamic Syria Time (GMT+3)
- */
 function getSyriaTime() {
   const nowUTC = new Date();
   const syriaTime = new Date(nowUTC.getTime() + (3 * 60 * 60 * 1000));
@@ -186,15 +185,12 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- Dynamic FX & Rates Combined Message ---
+// --- FX Message ---
 function buildFxAndRatesMessage(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  
-  // Calculate time dynamically at call
   const { date, time } = getSyriaTime();
-  
   const originalAmount = s.lastAmount;
   const isCurrentlyOld = s.mode === "oldToNew";
   const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
@@ -208,10 +204,8 @@ function buildFxAndRatesMessage(lang, s, ratesJson) {
     const mid = rates?.[code]?.mid;
     if (!mid || mid <= 0) continue;
     const flag = FLAG_BY_CODE[code] || "🏳️";
-    
     const resultAsNew = originalAmount / mid;
     const resultAsOld = originalAmount / (mid * RATE);
-
     lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
     lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
     lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
@@ -222,16 +216,13 @@ function buildFxAndRatesMessage(lang, s, ratesJson) {
   return lines.join("\n").trim();
 }
 
-// --- Dynamic Rate Only Block ---
 function formatRatesOnly(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const { date, time } = getSyriaTime();
-
   const lines = [`*${t.fxTitle}*`];
   lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
   lines.push("");
-
   const rates = ratesJson?.rates || {};
   for (const code of ORDERED_CODES) {
     const mid = rates?.[code]?.mid;
@@ -240,7 +231,7 @@ function formatRatesOnly(lang, ratesJson) {
   return lines.join("\n").trim();
 }
 
-// --- Result Message ---
+// --- Result Message (UPDATED WITH YOUR FORMATTING) ---
 function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
@@ -254,22 +245,27 @@ function buildResultMessage(lang, mode, amount, res) {
     ""
   ];
 
-  // الملاحظة تظهر أولاً كما طلبت
+  // 1. ملاحظة الفراطة أولاً
   if (res.remaining > 0) {
     lines.push(`*${t.changeNote}*`);
-    if (isOldToNew) lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${nf(lang, Math.round(res.remaining*RATE))}* ${t.oldUnit}).`);
-    else lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining/RATE).toFixed(2)}* ${t.newUnit}).`);
+    if (isOldToNew) {
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${nf(lang, Math.round(res.remaining*RATE))}* ${t.oldUnit}).`);
+    } else {
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining/RATE).toFixed(2)}* ${t.newUnit}).`);
+    }
     lines.push("");
   }
 
+  // 2. توزيع الفئات النقدية بالتنسيق المطلوب
   lines.push(`*${t.breakdownTitle}*`, `_(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})_`, "");
 
-  if (!res.dist.length) lines.push("—");
-  else {
-    // تعديل التنسيق هنا ليكون: الرمز ثم القيمة (بمسافة ثابتة) ثم العدد
-    // هذا يضمن أن علامة الضرب تكون على مستوى واحد
+  if (!res.dist.length) {
+    lines.push("—");
+  } else {
     for (const p of res.dist) {
-      lines.push(`${p.s}   *${String(p.v).padEnd(4, ' ')}* ×   ${p.count}`);
+      const name = p.n?.[lang] || p.v;
+      // التنسيق: [شعار] [الاسم] [القيمة] ثم [عدد]
+      lines.push(`${p.s}  *${name}* ${p.v}  ⬅️  *${p.count}* ${t.countLabel}`);
     }
   }
 
@@ -277,7 +273,6 @@ function buildResultMessage(lang, mode, amount, res) {
   return lines.join("\n");
 }
 
-// --- Calc Helper ---
 function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
@@ -306,9 +301,7 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  
   const t = TRANSLATIONS[s.lang];
-  
   if (s.lastAmount) {
     return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
   } else {
@@ -353,4 +346,4 @@ export default async function handler(req, res) {
   if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-       }
+                                                 }

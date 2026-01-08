@@ -13,8 +13,7 @@ if (!BOT_TOKEN) throw new Error("Missing BOT_TOKEN env var");
 const bot = new Telegraf(BOT_TOKEN);
 const RATE = 100;
 
-// --- Denominations Data ---
-// أصغر فئة جديدة هي 10
+// --- Denominations Data (تم إضافة كافة الفئات لتقليل الفراطة لأدنى حد) ---
 const DENOMS_NEW = [
   { v: 500, n: { ar: "سنابل", en: "Wheat" }, s: "🌾" },
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
@@ -22,14 +21,19 @@ const DENOMS_NEW = [
   { v: 50, n: { ar: "حمضيات", en: "Citrus" }, s: "🍊" },
   { v: 25, n: { ar: "عنب", en: "Grapes" }, s: "🍇" },
   { v: 10, n: { ar: "ياسمين", en: "Jasmine" }, s: "🌼" },
+  { v: 5, n: { ar: "خمسة", en: "Five" }, s: "🖐️" },
+  { v: 2, n: { ar: "ليرتان", en: "Two" }, s: "✌️" },
+  { v: 1, n: { ar: "ليرة", en: "One" }, s: "☝️" }
 ];
 
-// أصغر فئة قديمة ورقية متداولة هي 500
 const DENOMS_OLD = [
   { v: 5000, n: { ar: "خمسة آلاف", en: "5000" }, s: "💶" },
   { v: 2000, n: { ar: "ألفين", en: "2000" }, s: "💶" },
   { v: 1000, n: { ar: "ألف", en: "1000" }, s: "💵" },
   { v: 500, n: { ar: "خمسمئة", en: "500" }, s: "💵" },
+  { v: 200, n: { ar: "مئتان", en: "200" }, s: "💷" },
+  { v: 100, n: { ar: "مئة", en: "100" }, s: "💷" },
+  { v: 50, n: { ar: "خمسون", en: "50" }, s: "🪙" }
 ];
 
 const FLAG_BY_CODE = { 
@@ -114,7 +118,7 @@ const TRANSLATIONS = {
     askForAmount: "Please enter the amount to convert now:",
     ratesNote: "💡 To see FX rates, press *Refresh* or *FX Conversion*.",
     countLabel: "Qty"
-  },
+  }
 };
 
 const userStates = new Map();
@@ -128,17 +132,14 @@ function getUS(id) {
 function getKeyboard(id) {
   const s = getUS(id);
   const t = TRANSLATIONS[s.lang];
-  const isAr = s.lang === "ar";
-  const isOldToNew = s.mode === "oldToNew";
-
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(isAr ? t.langAR : t.langAR, "setLang:ar"),
-      Markup.button.callback(!isAr ? t.langEN : t.langEN, "setLang:en"),
+      Markup.button.callback(s.lang === "ar" ? t.langAR : t.langAR, "setLang:ar"),
+      Markup.button.callback(s.lang !== "ar" ? t.langEN : t.langEN, "setLang:en"),
     ],
     [
-      Markup.button.callback(isOldToNew ? t.modeOldToNewChecked : t.modeOldToNew, "setMode:oldToNew"),
-      Markup.button.callback(!isOldToNew ? t.modeNewToOldChecked : t.modeNewToOld, "setMode:newToOld"),
+      Markup.button.callback(s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeOldToNew, "setMode:oldToNew"),
+      Markup.button.callback(s.mode !== "oldToNew" ? t.modeNewToOldChecked : t.modeNewToOld, "setMode:newToOld"),
     ],
     [
       Markup.button.callback(t.refreshRates, "refreshRates"),
@@ -148,42 +149,31 @@ function getKeyboard(id) {
   ]);
 }
 
-function normalizeDigits(str) {
-  return String(str).replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d).replace(/,/g, "").trim();
-}
-function parseAmount(text) {
-  const cleaned = normalizeDigits(text);
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
-  const n = Number(cleaned);
-  return (Number.isFinite(n) && n > 0) ? n : null;
-}
 function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
-function pad2(n) { return String(n).padStart(2, "0"); }
 
-function getSyriaTime() {
-  const nowUTC = new Date();
-  const syriaTime = new Date(nowUTC.getTime() + (3 * 60 * 60 * 1000));
-  return { 
-    date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth()+1)}:${syriaTime.getUTCFullYear()}`, 
-    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}` 
-  };
+function calc(mode, amount) {
+  const isOldToNew = mode === "oldToNew";
+  let resVal = isOldToNew ? amount / RATE : amount * RATE;
+  resVal = Math.round(resVal * 100) / 100;
+
+  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
+  let currentTotal = resVal;
+  let dist = [];
+
+  for (const d of activeDenoms) {
+    // حساب دقيق للعدد مع تجنب مشاكل الفاصلة العائمة
+    const count = Math.floor((currentTotal + 0.0001) / d.v);
+    if (count > 0) {
+      dist.push({ ...d, count });
+      currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
+    }
+  }
+
+  return { resVal, remaining: currentTotal, dist };
 }
 
-let RATES_CACHE = { data: null, fetchedAt: 0 };
-async function fetchRates(force = false) {
-  const now = Date.now();
-  if (!force && RATES_CACHE.data && now - RATES_CACHE.fetchedAt < 60000) return RATES_CACHE.data;
-  try {
-    const r = await fetch(DEFAULT_RATES_URL, { cache: "no-store" });
-    const json = await r.json();
-    RATES_CACHE = { data: json, fetchedAt: now };
-    return json;
-  } catch (e) { return RATES_CACHE.data; }
-}
-
-// --- Result Message (Corrected Logic) ---
 function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
@@ -197,15 +187,12 @@ function buildResultMessage(lang, mode, amount, res) {
     ""
   ];
 
-  // ملاحظة الفراطة
   if (res.remaining > 0) {
     lines.push(`*${t.changeNote}*`);
     if (isOldToNew) {
-      // من قديم لجديد: الباقي بالجديد، يحول لقديم بالضرب بـ 100
-      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${nf(lang, Math.round(res.remaining*RATE))}* ${t.oldUnit}).`);
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${Math.round(res.remaining * RATE)}* ${t.oldUnit}).`);
     } else {
-      // من جديد لقديم: الباقي بالقديم، يحول لجديد بالقسمة على 100
-      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining/RATE).toFixed(2)}* ${t.newUnit}).`);
+      lines.push(`بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining / RATE).toFixed(2)}* ${t.newUnit}).`);
     }
     lines.push("");
   }
@@ -221,30 +208,8 @@ function buildResultMessage(lang, mode, amount, res) {
     }
   }
 
-  lines.push("", "ــــــــــــــــــــ", "", t.ratesNote, "", t.sendAnother);
+  lines.push("", "ــــــــــــــــــــ", "", t.sendAnother);
   return lines.join("\n");
-}
-
-// --- Corrected Calc Helper ---
-function calc(mode, amount) {
-  const isOldToNew = mode === "oldToNew";
-  let resVal = isOldToNew ? amount / RATE : amount * RATE;
-  resVal = Math.round(resVal * 100) / 100; // تقريب لمرتبتين عشريتين
-
-  const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
-  let currentTotal = resVal;
-  let dist = [];
-
-  for (const d of activeDenoms) {
-    const count = Math.floor(currentTotal / d.v);
-    if (count > 0) {
-      dist.push({ ...d, count });
-      currentTotal = Math.round((currentTotal - count * d.v) * 100) / 100;
-    }
-  }
-
-  // الباقي (الفراطة) هو كل ما تبقى بعد توزيع الأوراق النقدية
-  return { resVal, remaining: currentTotal, dist, isOldToNew };
 }
 
 bot.start(async (ctx) => {
@@ -255,8 +220,10 @@ bot.start(async (ctx) => {
 
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
-  const amount = parseAmount(ctx.message.text);
-  if (!amount) return ctx.reply(TRANSLATIONS[s.lang].invalid);
+  const text = ctx.message.text.replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)]).replace(/,/g, "").trim();
+  const amount = Number(text);
+  if (isNaN(amount) || amount <= 0) return ctx.reply(TRANSLATIONS[s.lang].invalid);
+  
   s.lastAmount = amount; 
   s.lastResult = calc(s.mode, amount);
   return ctx.replyWithMarkdown(buildResultMessage(s.lang, s.mode, amount, s.lastResult), getKeyboard(ctx.from.id));
@@ -275,14 +242,12 @@ bot.action(/setLang:(.*)/, async (ctx) => {
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   s.mode = ctx.match[1];
-  s.lastAmount = null; 
-  s.lastResult = null;
+  s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  return ctx.replyWithMarkdown(`*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n⚙️ تم تغيير الوضع\n\n${TRANSLATIONS[s.lang].askForAmount}`, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(`*${TRANSLATIONS[s.lang].title}*\n${TRANSLATIONS[s.lang].subtitle}\n\n⚙️ تم تغيير الوضع\n\nأرسل المبلغ المراد تحويله:`, getKeyboard(ctx.from.id));
 });
 
 export default async function handler(req, res) {
-  if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
-      }
+    }

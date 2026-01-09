@@ -75,6 +75,7 @@ const TRANSLATIONS = {
     fxInputLabel: "المبلغ المستخدم للتحويل",
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
+    // ✅ تعديل متفق عليه
     fxDualNew: "قيمتها بالليرة الجديدة",
     fxDualOld: "قيمتها بالليرة القديمة",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
@@ -112,6 +113,7 @@ const TRANSLATIONS = {
     fxInputLabel: "Amount Used",
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
+    // ✅ تعديل متفق عليه
     fxDualNew: "Value in NEW Lira",
     fxDualOld: "Value in OLD SYP",
     askForAmount: "Please enter the amount to convert now:",
@@ -154,56 +156,60 @@ function getKeyboard(id) {
 
 // --- Helpers ---
 function normalizeDigits(str) {
-  return String(str).replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d).replace(/,/g, "").trim();
+  return String(str)
+    .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d)
+    .replace(/,/g, "")
+    .trim();
 }
 function parseAmount(text) {
   const cleaned = normalizeDigits(text);
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
-  return (Number.isFinite(n) && n > 0) ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
-function pad2(n) { return String(n).padStart(2, "0"); }
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
 
+// HTML escape
 function escHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+function bold(s) {
+  return `<b>${escHtml(s)}</b>`;
+}
+function code(s) {
+  return `<code>${escHtml(s)}</code>`;
+}
+// convert *...* to <b>...</b> (لتنسيق ratesNote فقط بدون تغيير المعنى)
+function starsToBold(text) {
+  const raw = String(text);
+  let out = "";
+  let i = 0;
+  while (i < raw.length) {
+    const a = raw.indexOf("*", i);
+    if (a === -1) {
+      out += escHtml(raw.slice(i));
+      break;
+    }
+    const b = raw.indexOf("*", a + 1);
+    if (b === -1) {
+      out += escHtml(raw.slice(i));
+      break;
+    }
+    out += escHtml(raw.slice(i, a));
+    out += `<b>${escHtml(raw.slice(a + 1, b))}</b>`;
+    i = b + 1;
+  }
+  return out;
+}
+
 function padLeft(str, width) {
   str = String(str);
   return str.length >= width ? str : " ".repeat(width - str.length) + str;
-}
-function centerLine(text, width) {
-  const s = String(text);
-  if (s.length >= width) return s;
-  const left = Math.floor((width - s.length) / 2);
-  return " ".repeat(left) + s;
-}
-
-function buildBreakdownTableHtml(rows, lang = "ar") {
-  const countWord = lang === "ar" ? "عدد" : "count";
-  const denomW = Math.max(1, ...rows.map(r => String(r.denom).length));
-  const countW = Math.max(1, ...rows.map(r => String(r.count).length));
-
-  const RLM = "\u200F"; // Right-to-Left Mark
-
-  const lines = rows.map(r => {
-    const denom = padLeft(r.denom, denomW);
-    const count = padLeft(r.count, countW);
-    return `${RLM}${r.icon}  ${denom}  ${countWord}  ${count}`;
-  });
-
-  return `<pre>${escHtml(lines.join("\n"))}</pre>`;
-}
-
-function buildAttentionToButtonsHtml(lang = "ar") {
-  const RLM = "\u200F";
-  const width = 32;
-  const l1 = centerLine("⬇️⬇️⬇️", width);
-  const l2 = centerLine(lang === "ar" ? "انتبه للأزرار تحت الرسالة" : "Use the buttons below", width);
-  const l3 = centerLine("⬇️⬇️⬇️", width);
-  return `<pre>${escHtml(`${RLM}${l1}\n${RLM}${l2}\n${RLM}${l3}`)}</pre>`;
 }
 
 /**
@@ -211,10 +217,10 @@ function buildAttentionToButtonsHtml(lang = "ar") {
  */
 function getSyriaTime() {
   const nowUTC = new Date();
-  const syriaTime = new Date(nowUTC.getTime() + (3 * 60 * 60 * 1000));
+  const syriaTime = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
   return {
     date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth() + 1)}:${syriaTime.getUTCFullYear()}`,
-    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}`
+    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}`,
   };
 }
 
@@ -228,118 +234,160 @@ async function fetchRates(force = false) {
     const json = await r.json();
     RATES_CACHE = { data: json, fetchedAt: now };
     return json;
-  } catch (e) { return RATES_CACHE.data; }
+  } catch (e) {
+    return RATES_CACHE.data;
+  }
 }
 
-// --- Dynamic FX & Rates Combined Message ---
+// --- Dynamic FX & Rates Combined Message (HTML) ---
 function buildFxAndRatesMessage(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Calculate time dynamically at call
   const { date, time } = getSyriaTime();
 
   const originalAmount = s.lastAmount;
   const isCurrentlyOld = s.mode === "oldToNew";
   const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
 
-  const lines = [`*${t.fxCalcTitle}*`];
-  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
-  lines.push("", `💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`, "ــــــــــــــــــــ");
+  const lines = [];
+  lines.push(bold(t.fxCalcTitle));
+  lines.push(`${escHtml(t.dateLabel)}: ${code(date)} | ${escHtml(t.timeLabel)}: ${code(time)}`);
+  lines.push("");
+  lines.push(`💰 ${escHtml(t.fxInputLabel)}: ${code(nf(lang, originalAmount))} ${escHtml(unitLabel)}`);
+  lines.push("ــــــــــــــــــــ");
+  lines.push("");
 
   let printed = 0;
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (!mid || mid <= 0) continue;
-    const flag = FLAG_BY_CODE[code] || "🏳️";
 
+  // نطبع كامل البلوك داخل <pre> ليثبت الترتيب
+  const preLines = [];
+
+  for (const codeC of ORDERED_CODES) {
+    const mid = rates?.[codeC]?.mid;
+    if (!mid || mid <= 0) continue;
+
+    const flag = FLAG_BY_CODE[codeC] || "🏳️";
     const resultAsNew = originalAmount / mid;
     const resultAsOld = originalAmount / (mid * RATE);
 
-    lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
-    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
-    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
-    lines.push("");
+    preLines.push(`${flag}  ${codeC}  (السعر: ${nfEN.format(mid)})`);
+    preLines.push(`• ${t.fxDualNew}: ${nfEN.format(resultAsNew)}`);
+    preLines.push(`• ${t.fxDualOld}: ${nfEN.format(resultAsOld)}`);
+    preLines.push("");
     printed++;
   }
-  if (!printed) lines.push(t.fxNoRatesNow);
+
+  if (!printed) {
+    lines.push(escHtml(t.fxNoRatesNow));
+  } else {
+    lines.push(`<pre>${escHtml(preLines.join("\n").trim())}</pre>`);
+  }
+
   return lines.join("\n").trim();
 }
 
-// --- Dynamic Rate Only Block ---
+// --- Dynamic Rate Only Block (HTML) ---
 function formatRatesOnly(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const { date, time } = getSyriaTime();
 
-  const lines = [`*${t.fxTitle}*`];
-  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
+  const lines = [];
+  lines.push(bold(t.fxTitle));
+  lines.push(`${escHtml(t.dateLabel)}: ${code(date)} | ${escHtml(t.timeLabel)}: ${code(time)}`);
   lines.push("");
 
   const rates = ratesJson?.rates || {};
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (mid) lines.push(`${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`);
+  const preLines = [];
+  for (const c of ORDERED_CODES) {
+    const mid = rates?.[c]?.mid;
+    if (mid) preLines.push(`${FLAG_BY_CODE[c] || "🏳️"}  ${c}  ${nfEN.format(mid)}`);
   }
+
+  if (!preLines.length) lines.push(escHtml(t.noRates));
+  else lines.push(`<pre>${escHtml(preLines.join("\n"))}</pre>`);
+
   return lines.join("\n").trim();
 }
 
-// --- Result Message ---
+// --- Result Message (HTML + pre table for aligned breakdown) ---
 function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
   const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
-  const RLM = "\u200F";
 
-  const ratesNotePlain = (t.ratesNote || "").replace(/\*/g, "");
+  const lines = [];
 
-  const lines = [
-    `${RLM}<b>${escHtml(t.title)}</b>`,
-    `${RLM}${escHtml(t.subtitle)}`,
-    `${RLM}`,
-    `${RLM}• ${escHtml(t.inputAmount)}: <b>${escHtml(nf(lang, amount))}</b> ${escHtml(inUnit)}`,
-    `${RLM}• ${escHtml(t.equivalent)}: <b>${escHtml(nf(lang, res.resVal))}</b> ${escHtml(outUnit)}`,
-    `${RLM}`,
-  ];
+  lines.push(bold(t.title));
+  lines.push(escHtml(t.subtitle));
+  lines.push("");
+  lines.push("ــــــــــــــــــــ");
+  lines.push("");
 
-  // الملاحظة تظهر أولاً كما طلبت
+  // بلوك المدخل/النتيجة بشكل مرتب
+  lines.push(`${bold(t.inputAmount)}: ${code(nf(lang, amount))} ${escHtml(inUnit)}`);
+  lines.push(`${bold(t.equivalent)}: ${code(nf(lang, res.resVal))} ${escHtml(outUnit)}`);
+
+  // الملاحظة تظهر أولاً كما كان
   if (res.remaining > 0) {
-    lines.push(`${RLM}<b>${escHtml(t.changeNote)}</b>`);
+    lines.push("");
+    lines.push("ــــــــــــــــــــ");
+    lines.push("");
+    lines.push(bold(t.changeNote));
+
     if (isOldToNew) {
       lines.push(
-        `${RLM}بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.newUnit)}، تدفعها بالقديم (<b>${escHtml(nf(lang, Math.round(res.remaining * RATE)))}</b> ${escHtml(t.oldUnit)}).`
+        escHtml(
+          `بقي ${nf(lang, res.remaining)} ${t.newUnit}، تدفعها بالقديم (${nf(lang, Math.round(res.remaining * RATE))} ${t.oldUnit}).`
+        )
       );
     } else {
       lines.push(
-        `${RLM}بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.oldUnit)}، تدفعها بالجديد (<b>${escHtml((res.remaining / RATE).toFixed(2))}</b> ${escHtml(t.newUnit)}).`
+        escHtml(
+          `بقي ${nf(lang, res.remaining)} ${t.oldUnit}، تدفعها بالجديد (${(res.remaining / RATE).toFixed(2)} ${t.newUnit}).`
+        )
       );
     }
-    lines.push(`${RLM}`);
   }
 
-  lines.push(`${RLM}<b>${escHtml(t.breakdownTitle)}</b>`);
-  lines.push(`${RLM}<i>(${escHtml(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld)})</i>`);
-  lines.push(`${RLM}`);
+  lines.push("");
+  lines.push("ــــــــــــــــــــ");
+  lines.push("");
+
+  lines.push(bold(t.breakdownTitle));
+  lines.push(escHtml(`(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})`));
+  lines.push("");
 
   if (!res.dist.length) {
-    lines.push(`${RLM}—`);
+    lines.push(escHtml("—"));
   } else {
-    const rows = res.dist.map(p => ({ icon: p.s, denom: p.v, count: p.count }));
-    lines.push(buildBreakdownTableHtml(rows, lang));
+    // ✅ المطلوب: الرمز ثم الفئة ثم كلمة عدد ثم العدد + توحيد طول السطر
+    const denomWidth = Math.max(...res.dist.map((p) => String(p.v).length), 1);
+    const countWidth = Math.max(...res.dist.map((p) => String(p.count).length), 1);
+    const countWord = lang === "ar" ? "عدد" : "count";
+    const RLM = "\u200F";
+
+    const preLines = res.dist.map((p) => {
+      const denomStr = padLeft(p.v, denomWidth);
+      const countStr = padLeft(p.count, countWidth);
+      return `${RLM}${p.s}  ${denomStr}  ${countWord}  ${countStr}`;
+    });
+
+    lines.push(`<pre>${escHtml(preLines.join("\n"))}</pre>`);
   }
 
-  lines.push(`${RLM}`);
-  lines.push(`${RLM}ــــــــــــــــــــ`);
-  lines.push(`${RLM}`);
-  lines.push(`${RLM}${escHtml(ratesNotePlain)}`);
-  lines.push(`${RLM}`);
-  lines.push(`${RLM}${escHtml(t.sendAnother)}`);
-  lines.push(`${RLM}`);
-  lines.push(buildAttentionToButtonsHtml(lang));
+  lines.push("");
+  lines.push("ــــــــــــــــــــ");
+  lines.push("");
+  // ratesNote فيها *...* فحوّلناها لـ <b>...</b> لتظهر بشكل جميل بدون تغيير المعنى
+  lines.push(starsToBold(t.ratesNote));
+  lines.push("");
+  lines.push(escHtml(t.sendAnother));
 
-  return lines.join("\n");
+  return lines.join("\n").trim();
 }
 
 // --- Calc Helper ---
@@ -347,9 +395,11 @@ function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
   resVal = Math.round(resVal * 100) / 100;
+
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
   let remaining = resVal;
   let dist = [];
+
   for (const d of activeDenoms) {
     const count = Math.floor(remaining / d.v);
     if (count > 0) {
@@ -364,7 +414,8 @@ function calc(mode, amount) {
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
-  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, getKeyboard(ctx.from.id));
+  const msg = `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n${escHtml(t.sendAmount)}`;
+  return ctx.reply(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
@@ -375,27 +426,45 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   const t = TRANSLATIONS[s.lang];
 
   if (s.lastAmount) {
-    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), { parse_mode: "HTML", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+    return ctx
+      .editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), {
+        parse_mode: "HTML",
+        ...getKeyboard(ctx.from.id),
+      })
+      .catch(() => {});
   } else {
-    return ctx.editMessageText(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }).catch(()=>{});
+    const msg = `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n${escHtml(t.sendAmount)}`;
+    return ctx
+      .editMessageText(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) })
+      .catch(() => {});
   }
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
+
   s.mode = ctx.match[1];
-  s.lastAmount = null; s.lastResult = null;
+  s.lastAmount = null;
+  s.lastResult = null;
+
   await ctx.answerCbQuery(t.settingsUpdated);
+
   const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
-  return ctx.replyWithMarkdown(`*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع إلى: *${modeText}*\n\n${t.askForAmount}`, getKeyboard(ctx.from.id));
+
+  const msg =
+    `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n` +
+    `⚙️ ${escHtml("تم تغيير الوضع إلى")}: ${bold(modeText)}\n\n` +
+    `${escHtml(t.askForAmount)}`;
+
+  return ctx.reply(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates(true);
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  return ctx.replyWithMarkdown(formatRatesOnly(s.lang, rates), getKeyboard(ctx.from.id));
+  return ctx.reply(formatRatesOnly(s.lang, rates), { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
 bot.action("showFx", async (ctx) => {
@@ -403,19 +472,26 @@ bot.action("showFx", async (ctx) => {
   if (!s.lastAmount) return ctx.answerCbQuery(TRANSLATIONS[s.lang].fxNoLast);
   const rates = await fetchRates();
   await ctx.answerCbQuery();
-  return ctx.replyWithMarkdown(buildFxAndRatesMessage(s.lang, s, rates), getKeyboard(ctx.from.id));
+  return ctx.reply(buildFxAndRatesMessage(s.lang, s, rates), { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
   const amount = parseAmount(ctx.message.text);
   if (!amount) return ctx.reply(TRANSLATIONS[s.lang].invalid);
-  s.lastAmount = amount; s.lastResult = calc(s.mode, amount);
-  return ctx.reply(buildResultMessage(s.lang, s.mode, amount, s.lastResult), { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
+
+  s.lastAmount = amount;
+  s.lastResult = calc(s.mode, amount);
+
+  return ctx.reply(buildResultMessage(s.lang, s.mode, amount, s.lastResult), {
+    parse_mode: "HTML",
+    ...getKeyboard(ctx.from.id),
+  });
 });
 
 export default async function handler(req, res) {
-  if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
+  if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET)
+    return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
 }

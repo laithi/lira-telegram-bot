@@ -172,6 +172,19 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
+// --- Width equalizer (invisible line) ---
+const CARD_FILL = "⠀".repeat(44); // Braille blank U+2800
+function withFill(msg) {
+  return `${msg}\n${CARD_FILL}`;
+}
+
+function starsToPlain(text) {
+  return String(text).replace(/\*/g, "");
+}
+function cardTitle(title) {
+  return `*${title}*`;
+}
+
 // --- Time ---
 function getSyriaTime() {
   const nowUTC = new Date();
@@ -197,11 +210,7 @@ async function fetchRates(force = false) {
   }
 }
 
-// --- Card Builders (Markdown, RTL naturally) ---
-function cardTitle(title) {
-  return `*${title}*`;
-}
-
+// --- Cards (Conversion) ---
 function buildSummaryCard(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
@@ -243,13 +252,9 @@ function buildBreakdownCard(lang, mode, res) {
     return lines.join("\n");
   }
 
-  // المطلوب: الرمز ثم الفئة ثم كلمة عدد ثم العدد + بنفس نمط الصورة (قيمة × عدد + رمز)
+  // المطلوب: الرمز ثم الفئة ثم كلمة عدد ثم العدد
   const countWord = lang === "ar" ? "عدد" : "count";
-
   for (const p of res.dist) {
-    // صيغة قريبة للصورة: 500  ×  3   🌾
-    // ومع طلبك: الرمز ثم الفئة ثم كلمة عدد ثم العدد => 🌾  500  عدد  3
-    // اخترت الأقرب للصورة مع الحفاظ على الشرط:
     lines.push(`${p.s}   ${p.v}   ${countWord}   ${p.count}`);
   }
 
@@ -262,11 +267,7 @@ function buildFooterCard(lang) {
   return [starsToPlain(t.ratesNote), "", t.sendAnother].join("\n");
 }
 
-function starsToPlain(text) {
-  return String(text).replace(/\*/g, "");
-}
-
-// --- FX Cards (Markdown, similar layout) ---
+// --- FX Cards (Cleaner) ---
 function buildFxHeaderCard(lang, s) {
   const t = TRANSLATIONS[lang];
   const { date, time } = getSyriaTime();
@@ -282,34 +283,65 @@ function buildFxHeaderCard(lang, s) {
   ].join("\n");
 }
 
+function padRight(str, w) {
+  str = String(str);
+  return str.length >= w ? str : str + " ".repeat(w - str.length);
+}
+function padLeft(str, w) {
+  str = String(str);
+  return str.length >= w ? str : " ".repeat(w - str.length) + str;
+}
+
 function buildFxBodyCard(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const lines = [cardTitle(t.fxTitle), ""];
-
-  let printed = 0;
+  // جمع البيانات أولاً لتنسيق أعمدة متساوية
+  const items = [];
   for (const code of ORDERED_CODES) {
     const mid = rates?.[code]?.mid;
     if (!mid || mid <= 0) continue;
 
     const flag = FLAG_BY_CODE[code] || "🏳️";
-    const resultAsNew = s.lastAmount / mid;
-    const resultAsOld = s.lastAmount / (mid * RATE);
-
-    lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
-    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
-    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
-    lines.push("");
-    printed++;
+    const price = nfEN.format(mid);
+    const vNew = nfEN.format(s.lastAmount / mid);
+    const vOld = nfEN.format(s.lastAmount / (mid * RATE));
+    items.push({ flag, code, price, vNew, vOld });
   }
 
-  if (!printed) return [cardTitle(t.fxTitle), "", t.fxNoRatesNow].join("\n");
+  if (!items.length) return [cardTitle(t.fxTitle), "", t.fxNoRatesNow].join("\n");
+
+  const priceW = Math.max(...items.map((x) => x.price.length));
+  const newW = Math.max(...items.map((x) => x.vNew.length));
+  const oldW = Math.max(...items.map((x) => x.vOld.length));
+  const labelW = Math.max(t.fxDualNew.length, t.fxDualOld.length, (lang === "ar" ? "السعر" : "Price").length);
+
+  const priceLabel = lang === "ar" ? "السعر" : "Price";
+
+  const lines = [];
+  lines.push(cardTitle(t.fxTitle));
+  lines.push("");
+
+  // جدول منسّق داخل code block ليثبت الترتيب وما يطلع "معجوق"
+  const table = [];
+
+  for (const it of items) {
+    table.push(`${it.flag}  ${it.code}`);
+    table.push(`${padRight(priceLabel, labelW)} : ${padLeft(it.price, priceW)}`);
+    table.push(`${padRight(t.fxDualNew, labelW)} : ${padLeft(it.vNew, newW)}`);
+    table.push(`${padRight(t.fxDualOld, labelW)} : ${padLeft(it.vOld, oldW)}`);
+    table.push(""); // سطر فاصل بصري خفيف داخل الجدول
+  }
+
+  lines.push("```");
+  lines.push(...table.slice(0, -1)); // بدون آخر فراغ زائد
+  lines.push("```");
+
   return lines.join("\n").trim();
 }
 
-// --- Rates Cards (Markdown, similar layout) ---
+// --- Rates Card ---
 function buildRatesCard(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -356,10 +388,11 @@ function calc(mode, amount) {
 async function sendCards(ctx, cards) {
   for (let i = 0; i < cards.length; i++) {
     const isLast = i === cards.length - 1;
+    const msg = withFill(cards[i]);
     if (isLast) {
-      await ctx.replyWithMarkdown(cards[i], getKeyboard(ctx.from.id));
+      await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
     } else {
-      await ctx.replyWithMarkdown(cards[i]);
+      await ctx.replyWithMarkdown(msg);
     }
   }
 }
@@ -370,7 +403,7 @@ bot.start(async (ctx) => {
   const t = TRANSLATIONS[s.lang];
 
   const msg = [cardTitle(t.title), t.subtitle, "", t.sendAmount].join("\n");
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
@@ -378,10 +411,9 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   s.lang = ctx.match[1];
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
 
-  // ارسال رسالة جديدة (بدون تعديل رسائل قديمة)
   const t = TRANSLATIONS[s.lang];
   const msg = [cardTitle(t.title), t.subtitle, "", t.sendAmount].join("\n");
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
@@ -397,7 +429,7 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
 
   const msg = [cardTitle(t.title), t.subtitle, "", `⚙️ ${modeText}`, "", t.askForAmount].join("\n");
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
 });
 
 bot.action("refreshRates", async (ctx) => {
@@ -406,7 +438,7 @@ bot.action("refreshRates", async (ctx) => {
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
 
   const msg = buildRatesCard(s.lang, rates);
-  return ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
 });
 
 bot.action("showFx", async (ctx) => {
@@ -419,7 +451,6 @@ bot.action("showFx", async (ctx) => {
   const c1 = buildFxHeaderCard(s.lang, s);
   const c2 = buildFxBodyCard(s.lang, s, rates);
 
-  // FX كـ Cards (رسائل جديدة)
   await sendCards(ctx, [c1, c2]);
 });
 
@@ -431,7 +462,6 @@ bot.on("text", async (ctx) => {
   s.lastAmount = amount;
   s.lastResult = calc(s.mode, amount);
 
-  // ✅ كل رقم جديد => رسائل Cards جديدة، بدون تعديل السابق
   const cards = [
     buildSummaryCard(s.lang, s.mode, amount, s.lastResult),
     buildChangeCard(s.lang, s.mode, s.lastResult),

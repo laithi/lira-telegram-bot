@@ -19,7 +19,7 @@ const DENOMS_NEW = [
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
   { v: 100, n: { ar: "قطن", en: "Cotton" }, s: "☁️" },
   { v: 50, n: { ar: "حمضيات", en: "Citrus" }, s: "🍊" },
-  { v: 25, n: { ar: "عنب", en: "Grapes" }, s: "🍇" },
+  { v: 25, n: { ar: "توت", en: "Grapes" }, s: "🍇" },
   { v: 10, n: { ar: "ياسمين", en: "Jasmine" }, s: "🌼" },
 ];
 
@@ -75,7 +75,6 @@ const TRANSLATIONS = {
     fxInputLabel: "المبلغ المستخدم للتحويل",
     fxNoLast: "لم يتم إدخال مبلغ بعد 🙏",
     fxNoRatesNow: "خدمة الصرف غير متاحة.",
-    // ✅ تعديل: استبدال العبارات
     fxDualNew: "قيمتها بالليرة الجديدة",
     fxDualOld: "قيمتها بالليرة القديمة",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
@@ -114,7 +113,6 @@ const TRANSLATIONS = {
     fxInputLabel: "Amount Used",
     fxNoLast: "No amount entered yet 🙏",
     fxNoRatesNow: "FX service unavailable.",
-    // ✅ تعديل (محافظة على المعنى بالإنكليزي)
     fxDualNew: "Value in NEW Lira",
     fxDualOld: "Value in OLD SYP",
     askForAmount: "Please enter the amount to convert now:",
@@ -257,7 +255,6 @@ function buildFxAndRatesMessage(lang, s, ratesJson) {
     const resultAsOld = originalAmount / (mid * RATE);
 
     lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
-    // ✅ تعديل: نفس المنطق القديم لكن مع العبارات الجديدة
     lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
     lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
     lines.push("");
@@ -283,7 +280,10 @@ function formatRatesOnly(lang, ratesJson) {
   const rates = ratesJson?.rates || {};
   for (const code of ORDERED_CODES) {
     const mid = rates?.[code]?.mid;
-    if (mid) lines.push(`${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`);
+    if (mid)
+      lines.push(
+        `${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`
+      );
   }
   return lines.join("\n").trim();
 }
@@ -331,9 +331,16 @@ function buildResultMessage(lang, mode, amount, res) {
 
   if (!res.dist.length) lines.push("—");
   else {
-    // ✅ تعديل: RTL + ترتيب: الشعار ثم القيمة ثم العدد (من اليمين لليسار)
+    // ✅ تعديل: الرمز ثم الفئة ثم كلمة "عدد" ثم العدد + توحيد طول الأسطر
+    const denomWidth = Math.max(...res.dist.map((p) => String(p.v).length), 1);
+    const countWidth = Math.max(...res.dist.map((p) => String(p.count).length), 1);
+    const countWord = lang === "ar" ? "عدد" : "count";
+
     for (const p of res.dist) {
-      lines.push(`‏${p.s}   *${String(p.v).padStart(4, " ")}*   ×   ${p.count}`);
+      const denomStr = String(p.v).padStart(denomWidth, " ");
+      const countStr = String(p.count).padStart(countWidth, " ");
+      // استخدام monospace لضمان تساوي الطول ومحاذاة ثابتة
+      lines.push(`\`${"‏"}${p.s}  ${denomStr}  ${countWord}  ${countStr}\``);
     }
   }
 
@@ -412,7 +419,10 @@ bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates(true);
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-  return ctx.replyWithMarkdown(formatRatesOnly(s.lang, rates), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(
+    formatRatesOnly(s.lang, rates),
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.action("showFx", async (ctx) => {
@@ -420,7 +430,10 @@ bot.action("showFx", async (ctx) => {
   if (!s.lastAmount) return ctx.answerCbQuery(TRANSLATIONS[s.lang].fxNoLast);
   const rates = await fetchRates();
   await ctx.answerCbQuery();
-  return ctx.replyWithMarkdown(buildFxAndRatesMessage(s.lang, s, rates), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(
+    buildFxAndRatesMessage(s.lang, s, rates),
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.on("text", async (ctx) => {

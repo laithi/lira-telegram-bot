@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from "telegraf";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_SECRET = process.env.BOT_TOKEN ? process.env.TELEGRAM_SECRET : process.env.TELEGRAM_SECRET;
+const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 const APP_URL = process.env.APP_URL || `https://${process.env.VERCEL_URL}`;
 
 const DEFAULT_RATES_URL =
@@ -78,7 +78,8 @@ const TRANSLATIONS = {
     fxDualNew: "قيمتها بالليرة الجديدة",
     fxDualOld: "قيمتها بالليرة القديمة",
     askForAmount: "يرجى إدخال المبلغ المراد تحويله الآن:",
-    ratesNote: "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
+    ratesNote:
+      "💡 لرؤية أسعار الصرف، اضغط على *تحديث الأسعار* أو *تحويل للعملات*.",
   },
   en: {
     title: "Lira Guide",
@@ -123,7 +124,12 @@ const TRANSLATIONS = {
 const userStates = new Map();
 function getUS(id) {
   if (!userStates.has(id)) {
-    userStates.set(id, { lang: "ar", mode: "oldToNew", lastAmount: null, lastResult: null });
+    userStates.set(id, {
+      lang: "ar",
+      mode: "oldToNew",
+      lastAmount: null,
+      lastResult: null,
+    });
   }
   return userStates.get(id);
 }
@@ -141,8 +147,14 @@ function getKeyboard(id) {
       Markup.button.callback(!isAr ? t.langEN : t.langEN, "setLang:en"),
     ],
     [
-      Markup.button.callback(isOldToNew ? t.modeOldToNewChecked : t.modeOldToNew, "setMode:oldToNew"),
-      Markup.button.callback(!isOldToNew ? t.modeNewToOldChecked : t.modeNewToOld, "setMode:newToOld"),
+      Markup.button.callback(
+        isOldToNew ? t.modeOldToNewChecked : t.modeOldToNew,
+        "setMode:oldToNew"
+      ),
+      Markup.button.callback(
+        !isOldToNew ? t.modeNewToOldChecked : t.modeNewToOld,
+        "setMode:newToOld"
+      ),
     ],
     [
       Markup.button.callback(t.refreshRates, "refreshRates"),
@@ -155,7 +167,10 @@ function getKeyboard(id) {
 // --- Helpers ---
 function normalizeDigits(str) {
   return String(str)
-    .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d)
+    .replace(
+      /[٠-٩]/g,
+      (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d
+    )
     .replace(/,/g, "")
     .trim();
 }
@@ -166,32 +181,27 @@ function parseAmount(text) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 function nf(lang, val) {
-  return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
+  return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", {
+    maximumFractionDigits: 2,
+  }).format(val);
 }
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-// --- Width equalizer (invisible line) ---
-const CARD_FILL = "⠀".repeat(44); // Braille blank U+2800
-function withFill(msg) {
-  return `${msg}\n${CARD_FILL}`;
-}
-
-function starsToPlain(text) {
-  return String(text).replace(/\*/g, "");
-}
-function cardTitle(title) {
-  return `*${title}*`;
-}
-
-// --- Time ---
+/**
+ * Get Dynamic Syria Time (GMT+3)
+ */
 function getSyriaTime() {
   const nowUTC = new Date();
   const syriaTime = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
   return {
-    date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth() + 1)}:${syriaTime.getUTCFullYear()}`,
-    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}`,
+    date: `${pad2(syriaTime.getUTCDate())}:${pad2(
+      syriaTime.getUTCMonth() + 1
+    )}:${syriaTime.getUTCFullYear()}`,
+    time: `${pad2(syriaTime.getUTCHours())}:${pad2(
+      syriaTime.getUTCMinutes()
+    )}`,
   };
 }
 
@@ -199,7 +209,8 @@ function getSyriaTime() {
 let RATES_CACHE = { data: null, fetchedAt: 0 };
 async function fetchRates(force = false) {
   const now = Date.now();
-  if (!force && RATES_CACHE.data && now - RATES_CACHE.fetchedAt < 60000) return RATES_CACHE.data;
+  if (!force && RATES_CACHE.data && now - RATES_CACHE.fetchedAt < 60000)
+    return RATES_CACHE.data;
   try {
     const r = await fetch(DEFAULT_RATES_URL, { cache: "no-store" });
     const json = await r.json();
@@ -210,157 +221,131 @@ async function fetchRates(force = false) {
   }
 }
 
-// --- Cards (Conversion) ---
-function buildSummaryCard(lang, mode, amount, res) {
+// --- Dynamic FX & Rates Combined Message ---
+function buildFxAndRatesMessage(lang, s, ratesJson) {
+  const t = TRANSLATIONS[lang];
+  const rates = ratesJson?.rates || {};
+  const nfEN = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  // Calculate time dynamically at call
+  const { date, time } = getSyriaTime();
+
+  const originalAmount = s.lastAmount;
+  const isCurrentlyOld = s.mode === "oldToNew";
+  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
+
+  const lines = [`*${t.fxCalcTitle}*`];
+  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
+  lines.push(
+    "",
+    `💰 ${t.fxInputLabel}: *${nf(lang, originalAmount)}* ${unitLabel}`,
+    "ــــــــــــــــــــ"
+  );
+
+  let printed = 0;
+  for (const code of ORDERED_CODES) {
+    const mid = rates?.[code]?.mid;
+    if (!mid || mid <= 0) continue;
+    const flag = FLAG_BY_CODE[code] || "🏳️";
+
+    const resultAsNew = originalAmount / mid;
+    const resultAsOld = originalAmount / (mid * RATE);
+
+    lines.push(`${flag}  *${code}* (السعر: *${nfEN.format(mid)}*)`);
+    lines.push(`• ${t.fxDualNew}: *${nfEN.format(resultAsNew)}*`);
+    lines.push(`• ${t.fxDualOld}: *${nfEN.format(resultAsOld)}*`);
+    lines.push("");
+    printed++;
+  }
+  if (!printed) lines.push(t.fxNoRatesNow);
+  return lines.join("\n").trim();
+}
+
+// --- Dynamic Rate Only Block ---
+function formatRatesOnly(lang, ratesJson) {
+  const t = TRANSLATIONS[lang];
+  const nfEN = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const { date, time } = getSyriaTime();
+
+  const lines = [`*${t.fxTitle}*`];
+  lines.push(`${t.dateLabel}: *${date}* | ${t.timeLabel}: *${time}*`);
+  lines.push("");
+
+  const rates = ratesJson?.rates || {};
+  for (const code of ORDERED_CODES) {
+    const mid = rates?.[code]?.mid;
+    if (mid)
+      lines.push(
+        `${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`
+      );
+  }
+  return lines.join("\n").trim();
+}
+
+// --- Result Message ---
+function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
   const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
 
-  return [
-    cardTitle(t.title),
-    t.subtitle,
+  const lines = [
+    `*${t.title}*`,
+    `${t.subtitle}`,
     "",
     `• ${t.inputAmount}: *${nf(lang, amount)}* ${inUnit}`,
     `• ${t.equivalent}: *${nf(lang, res.resVal)}* ${outUnit}`,
-  ].join("\n");
-}
-
-function buildChangeCard(lang, mode, res) {
-  const t = TRANSLATIONS[lang];
-  const isOldToNew = mode === "oldToNew";
-
-  let line = lang === "ar" ? "لا يوجد باقي." : "No remaining change.";
-  if (res.remaining > 0) {
-    line = isOldToNew
-      ? `بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${nf(lang, Math.round(res.remaining * RATE))}* ${t.oldUnit}).`
-      : `بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(res.remaining / RATE).toFixed(2)}* ${t.newUnit}).`;
-  }
-
-  return [cardTitle(t.changeNote), "", line].join("\n");
-}
-
-function buildBreakdownCard(lang, mode, res) {
-  const t = TRANSLATIONS[lang];
-  const isOldToNew = mode === "oldToNew";
-  const sub = isOldToNew ? t.breakdownSubNew : t.breakdownSubOld;
-
-  const lines = [cardTitle(t.breakdownTitle), `(${sub})`, ""];
-
-  if (!res.dist.length) {
-    lines.push("—");
-    return lines.join("\n");
-  }
-
-  // المطلوب: الرمز ثم الفئة ثم كلمة عدد ثم العدد
-  const countWord = lang === "ar" ? "عدد" : "count";
-  for (const p of res.dist) {
-    lines.push(`${p.s}   ${p.v}   ${countWord}   ${p.count}`);
-  }
-
-  lines.push("", "__________");
-  return lines.join("\n");
-}
-
-function buildFooterCard(lang) {
-  const t = TRANSLATIONS[lang];
-  return [starsToPlain(t.ratesNote), "", t.sendAnother].join("\n");
-}
-
-// --- FX Cards (Cleaner) ---
-function buildFxHeaderCard(lang, s) {
-  const t = TRANSLATIONS[lang];
-  const { date, time } = getSyriaTime();
-  const isCurrentlyOld = s.mode === "oldToNew";
-  const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
-
-  return [
-    cardTitle(t.fxCalcTitle),
     "",
-    `• ${t.dateLabel}: *${date}*`,
-    `• ${t.timeLabel}: *${time}*`,
-    `• ${t.fxInputLabel}: *${nf(lang, s.lastAmount)}* ${unitLabel}`,
-  ].join("\n");
-}
+  ];
 
-function padRight(str, w) {
-  str = String(str);
-  return str.length >= w ? str : str + " ".repeat(w - str.length);
-}
-function padLeft(str, w) {
-  str = String(str);
-  return str.length >= w ? str : " ".repeat(w - str.length) + str;
-}
-
-function buildFxBodyCard(lang, s, ratesJson) {
-  const t = TRANSLATIONS[lang];
-  const rates = ratesJson?.rates || {};
-  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  // جمع البيانات أولاً لتنسيق أعمدة متساوية
-  const items = [];
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (!mid || mid <= 0) continue;
-
-    const flag = FLAG_BY_CODE[code] || "🏳️";
-    const price = nfEN.format(mid);
-    const vNew = nfEN.format(s.lastAmount / mid);
-    const vOld = nfEN.format(s.lastAmount / (mid * RATE));
-    items.push({ flag, code, price, vNew, vOld });
+  // الملاحظة تظهر أولاً كما طلبت
+  if (res.remaining > 0) {
+    lines.push(`*${t.changeNote}*`);
+    if (isOldToNew)
+      lines.push(
+        `بقي *${nf(lang, res.remaining)}* ${t.newUnit}، تدفعها بالقديم (*${nf(
+          lang,
+          Math.round(res.remaining * RATE)
+        )}* ${t.oldUnit}).`
+      );
+    else
+      lines.push(
+        `بقي *${nf(lang, res.remaining)}* ${t.oldUnit}، تدفعها بالجديد (*${(
+          res.remaining / RATE
+        ).toFixed(2)}* ${t.newUnit}).`
+      );
+    lines.push("");
   }
 
-  if (!items.length) return [cardTitle(t.fxTitle), "", t.fxNoRatesNow].join("\n");
+  lines.push(
+    `*${t.breakdownTitle}*`,
+    `_(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})_`,
+    ""
+  );
 
-  const priceW = Math.max(...items.map((x) => x.price.length));
-  const newW = Math.max(...items.map((x) => x.vNew.length));
-  const oldW = Math.max(...items.map((x) => x.vOld.length));
-  const labelW = Math.max(t.fxDualNew.length, t.fxDualOld.length, (lang === "ar" ? "السعر" : "Price").length);
+  if (!res.dist.length) lines.push("—");
+  else {
+    // ✅ تعديل: الرمز ثم الفئة ثم كلمة "عدد" ثم العدد + توحيد طول الأسطر
+    const denomWidth = Math.max(...res.dist.map((p) => String(p.v).length), 1);
+    const countWidth = Math.max(...res.dist.map((p) => String(p.count).length), 1);
+    const countWord = lang === "ar" ? "عدد" : "count";
 
-  const priceLabel = lang === "ar" ? "السعر" : "Price";
-
-  const lines = [];
-  lines.push(cardTitle(t.fxTitle));
-  lines.push("");
-
-  // جدول منسّق داخل code block ليثبت الترتيب وما يطلع "معجوق"
-  const table = [];
-
-  for (const it of items) {
-    table.push(`${it.flag}  ${it.code}`);
-    table.push(`${padRight(priceLabel, labelW)} : ${padLeft(it.price, priceW)}`);
-    table.push(`${padRight(t.fxDualNew, labelW)} : ${padLeft(it.vNew, newW)}`);
-    table.push(`${padRight(t.fxDualOld, labelW)} : ${padLeft(it.vOld, oldW)}`);
-    table.push(""); // سطر فاصل بصري خفيف داخل الجدول
+    for (const p of res.dist) {
+      const denomStr = String(p.v).padStart(denomWidth, " ");
+      const countStr = String(p.count).padStart(countWidth, " ");
+      // استخدام monospace لضمان تساوي الطول ومحاذاة ثابتة
+      lines.push(`\`${"‏"}${p.s}  ${denomStr}  ${countWord}  ${countStr}\``);
+    }
   }
 
-  lines.push("```");
-  lines.push(...table.slice(0, -1)); // بدون آخر فراغ زائد
-  lines.push("```");
-
-  return lines.join("\n").trim();
-}
-
-// --- Rates Card ---
-function buildRatesCard(lang, ratesJson) {
-  const t = TRANSLATIONS[lang];
-  const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const { date, time } = getSyriaTime();
-
-  const lines = [cardTitle(t.fxTitle), "", `• ${t.dateLabel}: *${date}*`, `• ${t.timeLabel}: *${time}*`, ""];
-
-  const rates = ratesJson?.rates || {};
-  let printed = 0;
-
-  for (const code of ORDERED_CODES) {
-    const mid = rates?.[code]?.mid;
-    if (!mid || mid <= 0) continue;
-    lines.push(`${FLAG_BY_CODE[code] || "🏳️"} *${code}* ${nfEN.format(mid)}`);
-    printed++;
-  }
-
-  if (!printed) return [cardTitle(t.fxTitle), "", t.noRates].join("\n");
-  return lines.join("\n").trim();
+  lines.push("", "ــــــــــــــــــــ", "", t.ratesNote, "", t.sendAnother);
+  return lines.join("\n");
 }
 
 // --- Calc Helper ---
@@ -368,11 +353,9 @@ function calc(mode, amount) {
   const isOldToNew = mode === "oldToNew";
   let resVal = isOldToNew ? amount / RATE : amount * RATE;
   resVal = Math.round(resVal * 100) / 100;
-
   const activeDenoms = isOldToNew ? DENOMS_NEW : DENOMS_OLD;
   let remaining = resVal;
   let dist = [];
-
   for (const d of activeDenoms) {
     const count = Math.floor(remaining / d.v);
     if (count > 0) {
@@ -380,30 +363,17 @@ function calc(mode, amount) {
       remaining = Math.round((remaining - count * d.v) * 100) / 100;
     }
   }
-
   return { resVal, remaining, dist, isOldToNew };
-}
-
-// --- Send Cards (NEW messages every time) ---
-async function sendCards(ctx, cards) {
-  for (let i = 0; i < cards.length; i++) {
-    const isLast = i === cards.length - 1;
-    const msg = withFill(cards[i]);
-    if (isLast) {
-      await ctx.replyWithMarkdown(msg, getKeyboard(ctx.from.id));
-    } else {
-      await ctx.replyWithMarkdown(msg);
-    }
-  }
 }
 
 // --- Handlers ---
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
-
-  const msg = [cardTitle(t.title), t.subtitle, "", t.sendAmount].join("\n");
-  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(
+    `*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`,
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.action(/setLang:(.*)/, async (ctx) => {
@@ -412,68 +382,78 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
 
   const t = TRANSLATIONS[s.lang];
-  const msg = [cardTitle(t.title), t.subtitle, "", t.sendAmount].join("\n");
-  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
+
+  if (s.lastAmount) {
+    return ctx
+      .editMessageText(
+        buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult),
+        { parse_mode: "Markdown", ...getKeyboard(ctx.from.id) }
+      )
+      .catch(() => {});
+  } else {
+    return ctx
+      .editMessageText(`*${t.title}*\n${t.subtitle}\n\n${t.sendAmount}`, {
+        parse_mode: "Markdown",
+        ...getKeyboard(ctx.from.id),
+      })
+      .catch(() => {});
+  }
 });
 
 bot.action(/setMode:(.*)/, async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
-
   s.mode = ctx.match[1];
   s.lastAmount = null;
   s.lastResult = null;
-
   await ctx.answerCbQuery(t.settingsUpdated);
-
-  const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
-
-  const msg = [cardTitle(t.title), t.subtitle, "", `⚙️ ${modeText}`, "", t.askForAmount].join("\n");
-  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
+  const modeText =
+    s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
+  return ctx.replyWithMarkdown(
+    `*${t.title}*\n${t.subtitle}\n\n⚙️ تم تغيير الوضع إلى: *${modeText}*\n\n${t.askForAmount}`,
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.action("refreshRates", async (ctx) => {
   const s = getUS(ctx.from.id);
   const rates = await fetchRates(true);
   await ctx.answerCbQuery(TRANSLATIONS[s.lang].settingsUpdated);
-
-  const msg = buildRatesCard(s.lang, rates);
-  return ctx.replyWithMarkdown(withFill(msg), getKeyboard(ctx.from.id));
+  return ctx.replyWithMarkdown(
+    formatRatesOnly(s.lang, rates),
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.action("showFx", async (ctx) => {
   const s = getUS(ctx.from.id);
   if (!s.lastAmount) return ctx.answerCbQuery(TRANSLATIONS[s.lang].fxNoLast);
-
   const rates = await fetchRates();
   await ctx.answerCbQuery();
-
-  const c1 = buildFxHeaderCard(s.lang, s);
-  const c2 = buildFxBodyCard(s.lang, s, rates);
-
-  await sendCards(ctx, [c1, c2]);
+  return ctx.replyWithMarkdown(
+    buildFxAndRatesMessage(s.lang, s, rates),
+    getKeyboard(ctx.from.id)
+  );
 });
 
 bot.on("text", async (ctx) => {
   const s = getUS(ctx.from.id);
   const amount = parseAmount(ctx.message.text);
   if (!amount) return ctx.reply(TRANSLATIONS[s.lang].invalid);
-
   s.lastAmount = amount;
   s.lastResult = calc(s.mode, amount);
-
-  const cards = [
-    buildSummaryCard(s.lang, s.mode, amount, s.lastResult),
-    buildChangeCard(s.lang, s.mode, s.lastResult),
-    buildBreakdownCard(s.lang, s.mode, s.lastResult),
-    buildFooterCard(s.lang),
-  ];
-
-  await sendCards(ctx, cards);
+  return ctx.replyWithMarkdown(
+    buildResultMessage(s.lang, s.mode, amount, s.lastResult),
+    getKeyboard(ctx.from.id)
+  );
 });
 
 export default async function handler(req, res) {
-  if (TELEGRAM_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET) return res.status(401).send();
+  if (
+    TELEGRAM_SECRET &&
+    req.headers["x-telegram-bot-api-secret-token"] !== TELEGRAM_SECRET
+  )
+    return res.status(401).send();
   if (req.method === "POST") await bot.handleUpdate(req.body);
   return res.status(200).send("OK");
 }

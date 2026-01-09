@@ -154,30 +154,22 @@ function getKeyboard(id) {
 
 // --- Helpers ---
 function normalizeDigits(str) {
-  return String(str)
-    .replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d)
-    .replace(/,/g, "")
-    .trim();
+  return String(str).replace(/[٠-٩]/g, (d) => "0123456789"["٠١٢٣٤٥٦٧٨٩".indexOf(d)] ?? d).replace(/,/g, "").trim();
 }
 function parseAmount(text) {
   const cleaned = normalizeDigits(text);
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return (Number.isFinite(n) && n > 0) ? n : null;
 }
 function nf(lang, val) {
   return new Intl.NumberFormat(lang === "ar" ? "ar-SY" : "en-US", { maximumFractionDigits: 2 }).format(val);
 }
 function pad2(n) { return String(n).padStart(2, "0"); }
 
-// HTML escape
 function escHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function bold(s) { return `<b>${escHtml(s)}</b>`; }
-function code(s) { return `<code>${escHtml(s)}</code>`; }
-function stripStars(text) { return String(text).replace(/\*/g, ""); }
-
 function padLeft(str, width) {
   str = String(str);
   return str.length >= width ? str : " ".repeat(width - str.length) + str;
@@ -185,6 +177,34 @@ function padLeft(str, width) {
 function padRight(str, width) {
   str = String(str);
   return str.length >= width ? str : str + " ".repeat(width - str.length);
+}
+
+// RTL mark
+const RLM = "\u200F";
+
+function preBlock(lines) {
+  const out = lines.map((l) => `${RLM}${l}`).join("\n");
+  return `<pre>${escHtml(out)}</pre>`;
+}
+
+// key/value table inside pre
+function kvTableBlock(emoji, title, rows) {
+  const keyW = Math.max(1, ...rows.map((r) => String(r.k).length));
+  const lines = [];
+  lines.push(`${emoji} ${title}`);
+  for (const r of rows) {
+    const k = padRight(r.k, keyW);
+    lines.push(`${k}  |  ${r.v}`);
+  }
+  return preBlock(lines);
+}
+
+// simple text block inside pre
+function textBlock(emoji, title, texts) {
+  const lines = [];
+  lines.push(`${emoji} ${title}`);
+  for (const t of texts) lines.push(t);
+  return preBlock(lines);
 }
 
 /**
@@ -195,7 +215,7 @@ function getSyriaTime() {
   const syriaTime = new Date(nowUTC.getTime() + (3 * 60 * 60 * 1000));
   return {
     date: `${pad2(syriaTime.getUTCDate())}:${pad2(syriaTime.getUTCMonth()+1)}:${syriaTime.getUTCFullYear()}`,
-    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}`,
+    time: `${pad2(syriaTime.getUTCHours())}:${pad2(syriaTime.getUTCMinutes())}`
   };
 }
 
@@ -212,7 +232,7 @@ async function fetchRates(force = false) {
   } catch (e) { return RATES_CACHE.data; }
 }
 
-// --- Dynamic FX & Rates Combined Message (HTML) ---
+// --- Dynamic FX & Rates Combined Message (RTL pre blocks) ---
 function buildFxAndRatesMessage(lang, s, ratesJson) {
   const t = TRANSLATIONS[lang];
   const rates = ratesJson?.rates || {};
@@ -224,140 +244,156 @@ function buildFxAndRatesMessage(lang, s, ratesJson) {
   const isCurrentlyOld = s.mode === "oldToNew";
   const unitLabel = isCurrentlyOld ? t.oldUnit : t.newUnit;
 
-  const lines = [];
-  lines.push(bold(t.fxCalcTitle));
-  lines.push(`${escHtml(t.dateLabel)}: ${code(date)} | ${escHtml(t.timeLabel)}: ${code(time)}`);
-  lines.push("");
-  lines.push(`💰 ${escHtml(t.fxInputLabel)}: ${code(nf(lang, originalAmount))} ${escHtml(unitLabel)}`);
-  lines.push("ــــــــــــــــــــ");
-  lines.push("");
+  const blocks = [];
 
-  let printed = 0;
+  blocks.push(
+    kvTableBlock("🟦", t.fxCalcTitle, [
+      { k: t.dateLabel, v: date },
+      { k: t.timeLabel, v: time },
+      { k: t.fxInputLabel, v: `${nf(lang, originalAmount)} ${unitLabel}` },
+    ])
+  );
+
   const preLines = [];
+  let printed = 0;
+
+  // widths for nicer alignment
+  const mids = ORDERED_CODES
+    .map((c) => ({ c, mid: rates?.[c]?.mid }))
+    .filter((x) => x.mid && x.mid > 0);
+
+  const midW = Math.max(1, ...mids.map((x) => nfEN.format(x.mid).length));
+  // compute result widths based on current amount
+  const resNewArr = mids.map((x) => nfEN.format(originalAmount / x.mid));
+  const resOldArr = mids.map((x) => nfEN.format(originalAmount / (x.mid * RATE)));
+  const resNewW = Math.max(1, ...resNewArr.map((s) => s.length));
+  const resOldW = Math.max(1, ...resOldArr.map((s) => s.length));
 
   for (const codeC of ORDERED_CODES) {
     const mid = rates?.[codeC]?.mid;
     if (!mid || mid <= 0) continue;
 
     const flag = FLAG_BY_CODE[codeC] || "🏳️";
-    const resultAsNew = originalAmount / mid;
-    const resultAsOld = originalAmount / (mid * RATE);
+    const resultAsNew = nfEN.format(originalAmount / mid);
+    const resultAsOld = nfEN.format(originalAmount / (mid * RATE));
+    const midStr = padLeft(nfEN.format(mid), midW);
+    const newStr = padLeft(resultAsNew, resNewW);
+    const oldStr = padLeft(resultAsOld, resOldW);
 
-    preLines.push(`${flag}  ${codeC}  (السعر: ${nfEN.format(mid)})`);
-    preLines.push(`• ${t.fxDualNew}: ${nfEN.format(resultAsNew)}`);
-    preLines.push(`• ${t.fxDualOld}: ${nfEN.format(resultAsOld)}`);
+    preLines.push(`${flag}  ${codeC}  |  السعر ${midStr}`);
+    preLines.push(`${t.fxDualNew}  |  ${newStr}`);
+    preLines.push(`${t.fxDualOld}  |  ${oldStr}`);
     preLines.push("");
     printed++;
   }
 
-  if (!printed) lines.push(escHtml(t.fxNoRatesNow));
-  else lines.push(`<pre>${escHtml(preLines.join("\n").trim())}</pre>`);
+  if (!printed) {
+    blocks.push(textBlock("🟨", t.fxTitle, [t.fxNoRatesNow]));
+  } else {
+    blocks.push(preBlock([`🟨 ${t.fxTitle}`, ...preLines].filter(Boolean)));
+  }
 
-  return lines.join("\n").trim();
+  return blocks.join("\n\n").trim();
 }
 
-// --- Dynamic Rate Only Block (HTML) ---
+// --- Dynamic Rate Only Block (RTL pre blocks) ---
 function formatRatesOnly(lang, ratesJson) {
   const t = TRANSLATIONS[lang];
   const nfEN = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const { date, time } = getSyriaTime();
 
-  const lines = [];
-  lines.push(bold(t.fxTitle));
-  lines.push(`${escHtml(t.dateLabel)}: ${code(date)} | ${escHtml(t.timeLabel)}: ${code(time)}`);
-  lines.push("");
+  const blocks = [];
+
+  blocks.push(
+    kvTableBlock("🟦", t.fxTitle, [
+      { k: t.dateLabel, v: date },
+      { k: t.timeLabel, v: time },
+    ])
+  );
 
   const rates = ratesJson?.rates || {};
   const preLines = [];
+  let printed = 0;
+
+  const mids = ORDERED_CODES
+    .map((c) => ({ c, mid: rates?.[c]?.mid }))
+    .filter((x) => x.mid && x.mid > 0);
+
+  const midW = Math.max(1, ...mids.map((x) => nfEN.format(x.mid).length));
+
   for (const c of ORDERED_CODES) {
     const mid = rates?.[c]?.mid;
-    if (mid) preLines.push(`${FLAG_BY_CODE[c] || "🏳️"}  ${c}  ${nfEN.format(mid)}`);
+    if (!mid || mid <= 0) continue;
+    const midStr = padLeft(nfEN.format(mid), midW);
+    preLines.push(`${FLAG_BY_CODE[c] || "🏳️"}  ${c}  |  ${midStr}`);
+    printed++;
   }
 
-  if (!preLines.length) lines.push(escHtml(t.noRates));
-  else lines.push(`<pre>${escHtml(preLines.join("\n"))}</pre>`);
+  if (!printed) blocks.push(textBlock("🟨", t.fxTitle, [t.noRates]));
+  else blocks.push(preBlock([`🟨 ${t.fxTitle}`, ...preLines]));
 
-  return lines.join("\n").trim();
+  return blocks.join("\n\n").trim();
 }
 
-// --- Result Message (HTML) ---
+// --- Result Message (ALL sections as RTL pre blocks, no separators) ---
 function buildResultMessage(lang, mode, amount, res) {
   const t = TRANSLATIONS[lang];
   const isOldToNew = mode === "oldToNew";
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
   const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
 
-  const RLM = "\u200F";
-  const sep = "ــــــــــــــــــــ";
+  const blocks = [];
 
-  // عرض المحتوى كله بنفس “ستايل جدول توزيع الفئات”
-  const labelCandidates = [t.inputAmount, t.equivalent, t.changeNote];
-  const labelW = Math.max(...labelCandidates.map((x) => String(x).length), 1);
-
-  const aStr = nf(lang, amount);
-  const rStr = nf(lang, res.resVal);
-  const numW = Math.max(String(aStr).length, String(rStr).length, 1);
-
-  const rows = [];
-
-  // Header lines inside pre
-  rows.push(`${RLM}${sep}`);
-  rows.push(`${RLM}🧾  ${t.title} — ${t.subtitle}`);
-  rows.push(`${RLM}${sep}`);
-  rows.push("");
-
-  // Amount rows
-  rows.push(
-    `${RLM}💰  ${padRight(t.inputAmount, labelW)} :  ${padLeft(aStr, numW)}  ${inUnit}`
-  );
-  rows.push(
-    `${RLM}🔁  ${padRight(t.equivalent, labelW)} :  ${padLeft(rStr, numW)}  ${outUnit}`
+  // header + summary
+  blocks.push(
+    kvTableBlock("🟦", `${t.title} — ${t.subtitle}`, [
+      { k: t.inputAmount, v: `${nf(lang, amount)} ${inUnit}` },
+      { k: t.equivalent, v: `${nf(lang, res.resVal)} ${outUnit}` },
+    ])
   );
 
-  // Change note (if any) كصف ضمن نفس الجدول
+  // change note
   if (res.remaining > 0) {
-    rows.push("");
-    const noteText = isOldToNew
-      ? `بقي ${nf(lang, res.remaining)} ${t.newUnit}، تدفعها بالقديم (${nf(lang, Math.round(res.remaining * RATE))} ${t.oldUnit}).`
-      : `بقي ${nf(lang, res.remaining)} ${t.oldUnit}، تدفعها بالجديد (${(res.remaining / RATE).toFixed(2)} ${t.newUnit}).`;
-    rows.push(`${RLM}⚠️  ${padRight(t.changeNote, labelW)} :  ${noteText}`);
+    const note =
+      isOldToNew
+        ? `بقي ${nf(lang, res.remaining)} ${t.newUnit}، تدفعها بالقديم (${nf(lang, Math.round(res.remaining * RATE))} ${t.oldUnit}).`
+        : `بقي ${nf(lang, res.remaining)} ${t.oldUnit}، تدفعها بالجديد (${(res.remaining / RATE).toFixed(2)} ${t.newUnit}).`;
+
+    blocks.push(textBlock("🟩", t.changeNote, [note]));
   }
 
-  // Breakdown section inside same pre
-  rows.push("");
-  rows.push(`${RLM}${sep}`);
-  rows.push(
-    `${RLM}📦  ${t.breakdownTitle} (${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})`
-  );
-  rows.push(`${RLM}${sep}`);
-
+  // breakdown table (requested format: icon then denom then "عدد" then count)
   if (!res.dist.length) {
-    rows.push(`${RLM}—`);
+    blocks.push(textBlock("🟨", `${t.breakdownTitle} (${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})`, ["—"]));
   } else {
-    const denomWidth = Math.max(...res.dist.map((p) => String(p.v).length), 1);
-    const countWidth = Math.max(...res.dist.map((p) => String(p.count).length), 1);
+    const denomWidth = Math.max(1, ...res.dist.map((p) => String(p.v).length));
+    const countWidth = Math.max(1, ...res.dist.map((p) => String(p.count).length));
     const countWord = lang === "ar" ? "عدد" : "count";
+
+    const lines = [];
+    lines.push(`🟨 ${t.breakdownTitle}`);
+    lines.push(`(${isOldToNew ? t.breakdownSubNew : t.breakdownSubOld})`);
+    lines.push("");
 
     for (const p of res.dist) {
       const denomStr = padLeft(p.v, denomWidth);
       const countStr = padLeft(p.count, countWidth);
-      rows.push(`${RLM}${p.s}  ${denomStr}  ${countWord}  ${countStr}`);
+      lines.push(`${p.s}  ${denomStr}  ${countWord}  ${countStr}`);
     }
+
+    blocks.push(preBlock(lines));
   }
 
-  // Footer notes in same table style
-  rows.push("");
-  rows.push(`${RLM}${sep}`);
-  rows.push(`${RLM}ℹ️  ${stripStars(t.ratesNote)}`);
-  rows.push(`${RLM}➡️  ${t.sendAnother}`);
-  rows.push(`${RLM}${sep}`);
+  // tips block
+  blocks.push(
+    textBlock("🟪", t.sendAnother, [
+      t.ratesNote,
+      "",
+      t.sendAnother,
+    ])
+  );
 
-  const msg =
-    `${bold(t.title)}\n` +
-    `${escHtml(t.subtitle)}\n\n` +
-    `<pre>${escHtml(rows.join("\n"))}</pre>`;
-
-  return msg.trim();
+  return blocks.join("\n\n").trim();
 }
 
 // --- Calc Helper ---
@@ -382,7 +418,14 @@ function calc(mode, amount) {
 bot.start(async (ctx) => {
   const s = getUS(ctx.from.id);
   const t = TRANSLATIONS[s.lang];
-  const msg = `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n${escHtml(t.sendAmount)}`;
+
+  const msg = preBlock([
+    `🟦 ${t.title}`,
+    t.subtitle,
+    "",
+    t.sendAmount,
+  ]);
+
   return ctx.reply(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
@@ -394,17 +437,13 @@ bot.action(/setLang:(.*)/, async (ctx) => {
   const t = TRANSLATIONS[s.lang];
 
   if (s.lastAmount) {
-    return ctx
-      .editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), {
-        parse_mode: "HTML",
-        ...getKeyboard(ctx.from.id),
-      })
-      .catch(() => {});
+    return ctx.editMessageText(buildResultMessage(s.lang, s.mode, s.lastAmount, s.lastResult), {
+      parse_mode: "HTML",
+      ...getKeyboard(ctx.from.id),
+    }).catch(()=>{});
   } else {
-    const msg = `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n${escHtml(t.sendAmount)}`;
-    return ctx
-      .editMessageText(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) })
-      .catch(() => {});
+    const msg = preBlock([`🟦 ${t.title}`, t.subtitle, "", t.sendAmount]);
+    return ctx.editMessageText(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) }).catch(()=>{});
   }
 });
 
@@ -414,12 +453,17 @@ bot.action(/setMode:(.*)/, async (ctx) => {
   s.mode = ctx.match[1];
   s.lastAmount = null; s.lastResult = null;
   await ctx.answerCbQuery(t.settingsUpdated);
+
   const modeText = s.mode === "oldToNew" ? t.modeOldToNewChecked : t.modeNewToOldChecked;
 
-  const msg =
-    `${bold(t.title)}\n${escHtml(t.subtitle)}\n\n` +
-    `⚙️ ${escHtml("تم تغيير الوضع إلى")}: ${bold(modeText)}\n\n` +
-    `${escHtml(t.askForAmount)}`;
+  const msg = preBlock([
+    `🟦 ${t.title}`,
+    t.subtitle,
+    "",
+    `⚙️ ${modeText}`,
+    "",
+    t.askForAmount,
+  ]);
 
   return ctx.reply(msg, { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
@@ -444,10 +488,7 @@ bot.on("text", async (ctx) => {
   const amount = parseAmount(ctx.message.text);
   if (!amount) return ctx.reply(TRANSLATIONS[s.lang].invalid);
   s.lastAmount = amount; s.lastResult = calc(s.mode, amount);
-  return ctx.reply(buildResultMessage(s.lang, s.mode, amount, s.lastResult), {
-    parse_mode: "HTML",
-    ...getKeyboard(ctx.from.id),
-  });
+  return ctx.reply(buildResultMessage(s.lang, s.mode, amount, s.lastResult), { parse_mode: "HTML", ...getKeyboard(ctx.from.id) });
 });
 
 export default async function handler(req, res) {

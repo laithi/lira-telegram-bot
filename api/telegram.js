@@ -19,7 +19,7 @@ const DENOMS_NEW = [
   { v: 200, n: { ar: "زيتون", en: "Olive" }, s: "🫒" },
   { v: 100, n: { ar: "قطن", en: "Cotton" }, s: "☁️" },
   { v: 50, n: { ar: "حمضيات", en: "Citrus" }, s: "🍊" },
-  { v: 25, n: { ar: "توت", en: "Grapes" }, s: "🍇" },
+  { v: 25, n: { ar: "عنب", en: "Grapes" }, s: "🍇" },
   { v: 10, n: { ar: "ياسمين", en: "Jasmine" }, s: "🌼" },
 ];
 
@@ -174,6 +174,12 @@ function padLeft(str, width) {
   str = String(str);
   return str.length >= width ? str : " ".repeat(width - str.length) + str;
 }
+function centerLine(text, width) {
+  const s = String(text);
+  if (s.length >= width) return s;
+  const left = Math.floor((width - s.length) / 2);
+  return " ".repeat(left) + s;
+}
 
 function buildBreakdownTableHtml(rows, lang = "ar") {
   const countWord = lang === "ar" ? "عدد" : "count";
@@ -189,6 +195,15 @@ function buildBreakdownTableHtml(rows, lang = "ar") {
   });
 
   return `<pre>${escHtml(lines.join("\n"))}</pre>`;
+}
+
+function buildAttentionToButtonsHtml(lang = "ar") {
+  const RLM = "\u200F";
+  const width = 32;
+  const l1 = centerLine("⬇️⬇️⬇️", width);
+  const l2 = centerLine(lang === "ar" ? "انتبه للأزرار تحت الرسالة" : "Use the buttons below", width);
+  const l3 = centerLine("⬇️⬇️⬇️", width);
+  return `<pre>${escHtml(`${RLM}${l1}\n${RLM}${l2}\n${RLM}${l3}`)}</pre>`;
 }
 
 /**
@@ -276,45 +291,53 @@ function buildResultMessage(lang, mode, amount, res) {
   const isOldToNew = mode === "oldToNew";
   const inUnit = isOldToNew ? t.oldUnit : t.newUnit;
   const outUnit = isOldToNew ? t.newUnit : t.oldUnit;
+  const RLM = "\u200F";
+
+  const ratesNotePlain = (t.ratesNote || "").replace(/\*/g, "");
 
   const lines = [
-    `<b>${escHtml(t.title)}</b>`,
-    `${escHtml(t.subtitle)}`,
-    "",
-    `• ${escHtml(t.inputAmount)}: <b>${escHtml(nf(lang, amount))}</b> ${escHtml(inUnit)}`,
-    `• ${escHtml(t.equivalent)}: <b>${escHtml(nf(lang, res.resVal))}</b> ${escHtml(outUnit)}`,
-    ""
+    `${RLM}<b>${escHtml(t.title)}</b>`,
+    `${RLM}${escHtml(t.subtitle)}`,
+    `${RLM}`,
+    `${RLM}• ${escHtml(t.inputAmount)}: <b>${escHtml(nf(lang, amount))}</b> ${escHtml(inUnit)}`,
+    `${RLM}• ${escHtml(t.equivalent)}: <b>${escHtml(nf(lang, res.resVal))}</b> ${escHtml(outUnit)}`,
+    `${RLM}`,
   ];
 
   // الملاحظة تظهر أولاً كما طلبت
   if (res.remaining > 0) {
-    lines.push(`<b>${escHtml(t.changeNote)}</b>`);
+    lines.push(`${RLM}<b>${escHtml(t.changeNote)}</b>`);
     if (isOldToNew) {
-      lines.push(`بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.newUnit)}، تدفعها بالقديم (<b>${escHtml(nf(lang, Math.round(res.remaining * RATE)))}</b> ${escHtml(t.oldUnit)}).`);
+      lines.push(
+        `${RLM}بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.newUnit)}، تدفعها بالقديم (<b>${escHtml(nf(lang, Math.round(res.remaining * RATE)))}</b> ${escHtml(t.oldUnit)}).`
+      );
     } else {
-      lines.push(`بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.oldUnit)}، تدفعها بالجديد (<b>${escHtml((res.remaining / RATE).toFixed(2))}</b> ${escHtml(t.newUnit)}).`);
+      lines.push(
+        `${RLM}بقي <b>${escHtml(nf(lang, res.remaining))}</b> ${escHtml(t.oldUnit)}، تدفعها بالجديد (<b>${escHtml((res.remaining / RATE).toFixed(2))}</b> ${escHtml(t.newUnit)}).`
+      );
     }
-    lines.push("");
+    lines.push(`${RLM}`);
   }
 
-  lines.push(`<b>${escHtml(t.breakdownTitle)}</b>`);
-  lines.push(`<i>(${escHtml(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld)})</i>`);
-  lines.push("");
+  lines.push(`${RLM}<b>${escHtml(t.breakdownTitle)}</b>`);
+  lines.push(`${RLM}<i>(${escHtml(isOldToNew ? t.breakdownSubNew : t.breakdownSubOld)})</i>`);
+  lines.push(`${RLM}`);
 
   if (!res.dist.length) {
-    lines.push("—");
+    lines.push(`${RLM}—`);
   } else {
     const rows = res.dist.map(p => ({ icon: p.s, denom: p.v, count: p.count }));
     lines.push(buildBreakdownTableHtml(rows, lang));
   }
 
-  const ratesNotePlain = (t.ratesNote || "").replace(/\*/g, "");
-  lines.push("");
-  lines.push("ــــــــــــــــــــ");
-  lines.push("");
-  lines.push(escHtml(ratesNotePlain));
-  lines.push("");
-  lines.push(escHtml(t.sendAnother));
+  lines.push(`${RLM}`);
+  lines.push(`${RLM}ــــــــــــــــــــ`);
+  lines.push(`${RLM}`);
+  lines.push(`${RLM}${escHtml(ratesNotePlain)}`);
+  lines.push(`${RLM}`);
+  lines.push(`${RLM}${escHtml(t.sendAnother)}`);
+  lines.push(`${RLM}`);
+  lines.push(buildAttentionToButtonsHtml(lang));
 
   return lines.join("\n");
 }

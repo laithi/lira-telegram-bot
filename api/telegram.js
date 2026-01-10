@@ -161,6 +161,8 @@ function getKeyboard(id) {
       Markup.button.callback(t.fxBtn, "showFx"),
     ],
     [Markup.button.webApp(t.openMiniApp, APP_URL)],
+    // --- تمت إضافة الزر هنا ---
+    [Markup.button.url("🌐 MyLira Online", "https://mylira.online/lira.html")]
   ]);
 }
 

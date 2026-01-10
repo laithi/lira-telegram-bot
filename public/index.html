@@ -3,34 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>دليل الليرة الشامل</title>
-    
+    <title>MyLira</title>
+
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    
+
     <style>
         * { font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-        body { 
-            background-color: var(--tg-theme-bg-color, #f8fafc); 
-            color: var(--tg-theme-text-color, #0f172a); 
-            margin: 0; padding: 0; 
+        body {
+            background-color: var(--tg-theme-bg-color, #f8fafc);
+            color: var(--tg-theme-text-color, #0f172a);
+            margin: 0; padding: 0;
             touch-action: manipulation;
         }
         .tg-card { background: var(--tg-theme-secondary-bg-color, white); border-radius: 24px; }
         .tg-button { background-color: var(--tg-theme-button-color, #4f46e5); color: var(--tg-theme-button-text-color, white); }
-        .input-field { font-size: 3.5rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; }
+        .input-field { font-size: 3.9rem; font-weight: 900; width: 100%; background: transparent; border: none; outline: none; }
         .grid-currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .mode-switch-btn { transition: all 0.3s ease; }
-        
+
         .tab-active { color: #4f46e5; border-bottom: 3px solid #4f46e5; }
         .tab-inactive { color: #94a3b8; }
         .sticky-tabs { position: sticky; top: 0; z-index: 50; background-color: var(--tg-theme-bg-color, #f8fafc); }
-        
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -48,8 +48,18 @@
         const IconTrash = () => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
         );
+
         const IconCoins = () => (
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18.06"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg>
+        );
+
+        const IconSwap = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 3h5v5"/>
+                <path d="M4 20h5v-5"/>
+                <path d="M21 8c-2.5-2.8-6.2-4.5-10.3-4.5-2.3 0-4.5.5-6.4 1.5"/>
+                <path d="M3 16c2.5 2.8 6.2 4.5 10.3 4.5 2.3 0 4.5-.5 6.4-1.5"/>
+            </svg>
         );
 
         const RATE = 100;
@@ -75,10 +85,14 @@
 
         const TEXTS = {
             ar: {
-                title: "دليل الليرة",
+                title: "ليرتك",
                 tab1: "المحول الذكي",
-                tab2: "حاسبة الفكة",
-                old: "قديم", new: "جديد",
+                tab2: "حاسبة الباقي",
+
+                // Converter
+                convertFrom: "تحويل من",
+                old: "قديم",
+                new: "جديد",
                 inputLabel: (m) => `المبلغ (${m === 'oldToNew' ? 'ل.س قديمة' : 'ليرة جديدة'})`,
                 resultLabel: (m) => `المعادل (${m === 'oldToNew' ? 'جديد' : 'قديم'})`,
                 fxTitle: "تحويل للعملات الأجنبية",
@@ -86,13 +100,36 @@
                 placeholder: "0.00",
                 emptyBreakdown: "أدخل مبلغاً لعرض التوزيع..",
                 leftoverMsg: (v, p) => `بقي ${v} ليرة جديدة، تدفع بقيمة ${p} ل.س قديمة.`,
-                leftoverMsgOld: (v, p) => `بقي ${v} ل.س قديمة، تدفع بقيمة ${p} ليرة جديدة.`
+                leftoverMsgOld: (v, p) => `بقي ${v} ل.س قديمة، تدفع بقيمة ${p} ليرة جديدة.`,
+
+                // Change (Baqi)
+                baqiTitle: "حاسبة الباقي",
+                billTitle: "المبلغ المطلوب (الفاتورة)",
+                paidTitle: "المبلغ المستلم",
+                billNewPh: "0 جديد",
+                billOldPh: "0 قديم",
+                paidNewPh: "0 جديد",
+                paidOldPh: "0 قديم",
+                customerChange: "الباقي للزبون",
+                newUnit: "ليرة جديدة",
+                oldUnit: "ليرة قديمة",
+                scenarioNew: "إرجاع بالجديد",
+                scenarioOld: "إرجاع بالقديم",
+                countWord: "عدد",
+                liraTypeNew: "جديدة",
+                liraTypeOld: "قديمة",
+                noEnough: "لا يوجد باقي كافٍ لتغطية هذا المبلغ",
+                enterToShow: "أدخل المبالغ\nلعرض احتمالات الباقي"
             },
             en: {
-                title: "Lira Guide",
+                title: "MyLira",
                 tab1: "Smart Converter",
-                tab2: "Change Calc",
-                old: "Old", new: "New",
+                tab2: "Change Due",
+
+                // Converter
+                convertFrom: "Convert from",
+                old: "Old",
+                new: "New",
                 inputLabel: (m) => `Amount (${m === 'oldToNew' ? 'Old SYP' : 'New Lira'})`,
                 resultLabel: (m) => `Equivalent (${m === 'oldToNew' ? 'New' : 'Old'})`,
                 fxTitle: "Currency Conversion",
@@ -100,7 +137,26 @@
                 placeholder: "0.00",
                 emptyBreakdown: "Enter amount to see breakdown..",
                 leftoverMsg: (v, p) => `Remaining ${v} New Lira, pay as ${p} Old SYP.`,
-                leftoverMsgOld: (v, p) => `Remaining ${v} Old SYP, pay as ${p} New Lira.`
+                leftoverMsgOld: (v, p) => `Remaining ${v} Old SYP, pay as ${p} New Lira.`,
+
+                // Change (Baqi)
+                baqiTitle: "Change Due",
+                billTitle: "Total Bill",
+                paidTitle: "Amount Received",
+                billNewPh: "0 New",
+                billOldPh: "0 Old",
+                paidNewPh: "0 New",
+                paidOldPh: "0 Old",
+                customerChange: "Change to Customer",
+                newUnit: "New Lira",
+                oldUnit: "Old SYP",
+                scenarioNew: "Return in New",
+                scenarioOld: "Return in Old",
+                countWord: "Count",
+                liraTypeNew: "New",
+                liraTypeOld: "Old",
+                noEnough: "No sufficient change for this amount",
+                enterToShow: "Enter amounts\nto show change options"
             }
         };
 
@@ -116,6 +172,12 @@
                     setVal('');
                     if (inputRef.current) inputRef.current.focus();
                 }
+            };
+
+            const flipMode = () => {
+                setMode((prev) => (prev === 'oldToNew' ? 'newToOld' : 'oldToNew'));
+                setVal('');
+                if (inputRef.current) inputRef.current.focus();
             };
 
             const cleanInput = (txt) => {
@@ -147,21 +209,50 @@
                 <div className="space-y-6 animate-fade-in">
                     <div className="flex justify-between items-center px-2">
                         <div className="font-black text-2xl text-indigo-600">{t.tab1}</div>
-                        <div className="bg-black/5 p-1 rounded-2xl flex">
-                            <button onClick={() => toggleMode('oldToNew')} className={`px-3 py-1 rounded-xl text-[10px] font-bold transition-all mode-switch-btn ${mode === 'oldToNew' ? 'tg-button shadow-md' : 'opacity-40'}`}>
-                                {t.old}
-                            </button>
-                            <button onClick={() => toggleMode('newToOld')} className={`px-3 py-1 rounded-xl text-[10px] font-bold transition-all mode-switch-btn ${mode === 'newToOld' ? 'tg-button shadow-md' : 'opacity-40'}`}>
-                                {t.new}
-                            </button>
+
+                        <div className="flex items-center gap-2">
+                            <div className="text-xs font-black text-slate-700/70">{t.convertFrom}</div>
+
+                            <div className="bg-black/5 p-1 rounded-2xl flex items-center gap-1">
+                                <button
+                                    onClick={() => toggleMode('oldToNew')}
+                                    className={`px-3 py-1 rounded-xl text-[11px] font-black transition-all mode-switch-btn ${mode === 'oldToNew' ? 'tg-button shadow-md' : 'opacity-50'}`}
+                                >
+                                    {t.old}
+                                </button>
+
+                                {/* light toggle button */}
+                                <button
+                                    onClick={flipMode}
+                                    aria-label="Toggle conversion"
+                                    className="h-7 w-7 rounded-xl bg-white/70 border border-black/10 shadow-sm flex items-center justify-center text-slate-700 hover:bg-white transition"
+                                >
+                                    <IconSwap />
+                                </button>
+
+                                <button
+                                    onClick={() => toggleMode('newToOld')}
+                                    className={`px-3 py-1 rounded-xl text-[11px] font-black transition-all mode-switch-btn ${mode === 'newToOld' ? 'tg-button shadow-md' : 'opacity-50'}`}
+                                >
+                                    {t.new}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div className="tg-card p-6 shadow-sm border border-black/5">
-                        <div className="text-[10px] font-black opacity-30 uppercase mb-2 tracking-widest">{t.inputLabel(mode)}</div>
-                        <input ref={inputRef} type="text" inputMode="decimal" value={val} onChange={(e) => setVal(cleanInput(e.target.value))} placeholder={t.placeholder} className={`input-field text-indigo-900 ${isAr ? 'text-right' : 'text-left'}`} />
+                        <div className="text-xs font-black text-slate-700/70 uppercase mb-2 tracking-widest">{t.inputLabel(mode)}</div>
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            inputMode="decimal"
+                            value={val}
+                            onChange={(e) => setVal(cleanInput(e.target.value))}
+                            placeholder={t.placeholder}
+                            className={`input-field text-indigo-950 ${isAr ? 'text-right' : 'text-left'}`}
+                        />
                         <div className="mt-6 pt-5 border-t border-black/5">
-                            <div className="text-[10px] font-black opacity-30 uppercase mb-1 tracking-widest">{t.resultLabel(mode)}</div>
+                            <div className="text-xs font-black text-slate-700/70 uppercase mb-1 tracking-widest">{t.resultLabel(mode)}</div>
                             <div className="text-4xl font-black text-indigo-600">
                                 {convertedVal.toLocaleString(isAr ? 'ar-SY' : 'en-US', { maximumFractionDigits: 2 })}
                             </div>
@@ -171,14 +262,17 @@
                     {breakdown.rem > 0 && (
                         <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-start animate-pulse">
                             <span className="text-xl">⚠️</span>
-                            <div className="text-amber-900 text-[11px] font-bold leading-relaxed">
-                                {mode === 'oldToNew' ? t.leftoverMsg(breakdown.rem, Math.round(breakdown.rem * RATE).toLocaleString()) : t.leftoverMsgOld(breakdown.rem, (breakdown.rem / RATE).toFixed(2))}
+                            <div className="text-amber-900 text-xs font-bold leading-relaxed">
+                                {mode === 'oldToNew'
+                                    ? t.leftoverMsg(breakdown.rem, Math.round(breakdown.rem * RATE).toLocaleString())
+                                    : t.leftoverMsgOld(breakdown.rem, (breakdown.rem / RATE).toFixed(2))
+                                }
                             </div>
                         </div>
                     )}
 
                     <div className="space-y-3">
-                        <h3 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">{t.breakdownTitle}</h3>
+                        <h3 className="text-xs font-black text-slate-700/60 px-2 uppercase tracking-widest">{t.breakdownTitle}</h3>
                         <div className="space-y-2">
                             {breakdown.list.length > 0 ? breakdown.list.map(b => (
                                 <div key={b.v} className="tg-card p-4 flex items-center justify-between border border-black/5 shadow-sm">
@@ -186,17 +280,21 @@
                                         <span className="text-3xl">{b.s}</span>
                                         <div>
                                             <div className="font-black text-xl leading-none">{b.v.toLocaleString()}</div>
-                                            <div className="text-[9px] font-bold opacity-40 mt-1">{b.n[lang]}</div>
+                                            <div className="text-[10px] font-bold text-slate-600/70 mt-1">{b.n[lang]}</div>
                                         </div>
                                     </div>
                                     <div className="tg-button px-4 py-1.5 rounded-xl font-black text-lg">× {b.count}</div>
                                 </div>
-                            )) : <div className="text-center py-4 text-slate-300 font-bold text-xs italic opacity-50">{t.emptyBreakdown}</div>}
+                            )) : (
+                                <div className="text-center py-4 text-slate-400 font-bold text-sm italic opacity-70">
+                                    {t.emptyBreakdown}
+                                </div>
+                            )}
                         </div>
                     </div>
 
                     <div className="space-y-3 pb-10">
-                        <h3 className="text-[10px] font-black opacity-30 px-2 uppercase tracking-widest">{t.fxTitle}</h3>
+                        <h3 className="text-xs font-black text-slate-700/60 px-2 uppercase tracking-widest">{t.fxTitle}</h3>
                         <div className="grid-currencies">
                             {ORDERED_CODES.map(code => {
                                 const rate = rates[code]?.mid;
@@ -204,7 +302,7 @@
                                 return (
                                     <div key={code} className="tg-card p-4 flex flex-col justify-between h-24 border border-black/5 shadow-sm">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-xs font-black opacity-30">{code}</span>
+                                            <span className="text-xs font-black text-slate-600/60">{code}</span>
                                             <span>{FLAG_BY_CODE[code]}</span>
                                         </div>
                                         <div className="text-xl font-black text-indigo-600 font-mono">{resValue}</div>
@@ -217,9 +315,9 @@
             );
         };
 
-        const ChangeCalculator = () => {
+        const ChangeCalculator = ({ lang, t }) => {
             const [fields, setFields] = useState({ billNew: '', billOld: '', paidNew: '', paidOld: '' });
-            
+
             const parseNumbers = (str) => {
                 const map = { '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9' };
                 return str.replace(/[٠-٩]/g, (d) => map[d]).replace(/[^0-9.]/g, '');
@@ -233,6 +331,7 @@
 
             const handleClear = () => setFields({ billNew: '', billOld: '', paidNew: '', paidOld: '' });
 
+            // --- LOGIC UNCHANGED ---
             const totalBillInNew = (parseFloat(fields.billNew) || 0) + ((parseFloat(fields.billOld) || 0) / RATE);
             const totalPaidInNew = (parseFloat(fields.paidNew) || 0) + ((parseFloat(fields.paidOld) || 0) / RATE);
             const changeInNew = Math.max(0, totalPaidInNew - totalBillInNew);
@@ -255,20 +354,32 @@
                 const list = [];
                 const standardNew = getBreakdown(changeInNew, DENOMS_NEW_CHANGE);
                 if (standardNew.length > 0) {
-                    list.push({ id: 'new-1', title: 'إرجاع بالجديد', color: 'border-indigo-600', badge: 'bg-indigo-600', items: standardNew.map(i => ({ ...i, type: 'جديدة' })) });
+                    list.push({
+                        id: 'new-1',
+                        title: t.scenarioNew,
+                        color: 'border-indigo-600',
+                        badge: 'bg-indigo-600',
+                        items: standardNew.map(i => ({ ...i, type: t.liraTypeNew }))
+                    });
                 }
                 const standardOld = getBreakdown(changeInNew * RATE, DENOMS_OLD_CHANGE);
                 if (standardOld.length > 0) {
-                    list.push({ id: 'old-1', title: 'إرجاع بالقديم', color: 'border-emerald-600', badge: 'bg-emerald-600', items: standardOld.map(i => ({ ...i, type: 'قديمة' })) });
+                    list.push({
+                        id: 'old-1',
+                        title: t.scenarioOld,
+                        color: 'border-emerald-600',
+                        badge: 'bg-emerald-600',
+                        items: standardOld.map(i => ({ ...i, type: t.liraTypeOld }))
+                    });
                 }
                 return list;
-            }, [changeInNew, getBreakdown]);
+            }, [changeInNew, getBreakdown, t]);
 
             return (
                 <div className="space-y-6 pb-20 animate-fade-in">
                     <div className="flex justify-between items-center pt-2 px-2">
                         <div className="flex items-center gap-2 text-indigo-600">
-                             <h1 className="text-2xl font-black">حاسبة الفكة</h1>
+                             <h1 className="text-2xl font-black">{t.baqiTitle}</h1>
                         </div>
                         <button onClick={handleClear} className="p-3 bg-white rounded-2xl shadow-sm text-red-500 border border-slate-100 flex items-center justify-center">
                             <IconTrash />
@@ -277,29 +388,62 @@
 
                     <div className="grid gap-4">
                         <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
-                            <p className="text-center text-[10px] font-black text-indigo-600 uppercase mb-3 tracking-widest">المبلغ المطلوب (الفاتورة)</p>
+                            <p className="text-center text-xs font-black text-indigo-700/80 uppercase mb-3 tracking-widest">{t.billTitle}</p>
                             <div className="grid grid-cols-2 gap-3">
-                                <input type="text" inputMode="decimal" name="billNew" value={fields.billNew} onChange={handleChange} placeholder="0 جديد" className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"/>
-                                <input type="text" inputMode="decimal" name="billOld" value={fields.billOld} onChange={handleChange} placeholder="0 قديم" className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"/>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    name="billNew"
+                                    value={fields.billNew}
+                                    onChange={handleChange}
+                                    placeholder={t.billNewPh}
+                                    className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"
+                                />
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    name="billOld"
+                                    value={fields.billOld}
+                                    onChange={handleChange}
+                                    placeholder={t.billOldPh}
+                                    className="w-full h-14 bg-slate-50 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-indigo-500/20"
+                                />
                             </div>
                         </div>
+
                         <div className="bg-white rounded-3xl p-5 shadow-sm border-2 border-emerald-500">
-                            <p className="text-center text-[10px] font-black text-emerald-600 uppercase mb-3 tracking-widest">المبلغ المستلم</p>
+                            <p className="text-center text-xs font-black text-emerald-700/80 uppercase mb-3 tracking-widest">{t.paidTitle}</p>
                             <div className="grid grid-cols-2 gap-3">
-                                <input type="text" inputMode="decimal" name="paidNew" value={fields.paidNew} onChange={handleChange} placeholder="0 جديد" className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"/>
-                                <input type="text" inputMode="decimal" name="paidOld" value={fields.paidOld} onChange={handleChange} placeholder="0 قديم" className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"/>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    name="paidNew"
+                                    value={fields.paidNew}
+                                    onChange={handleChange}
+                                    placeholder={t.paidNewPh}
+                                    className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"
+                                />
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    name="paidOld"
+                                    value={fields.paidOld}
+                                    onChange={handleChange}
+                                    placeholder={t.paidOldPh}
+                                    className="w-full h-14 bg-emerald-50/30 rounded-2xl text-center text-xl font-black outline-none border-none focus:ring-2 focus:ring-emerald-500/20"
+                                />
                             </div>
                         </div>
                     </div>
 
                     <div className="bg-[#111827] rounded-[2.5rem] p-8 text-center shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-amber-500"></div>
-                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">الباقي للزبون</p>
-                        <div className="text-6xl font-black text-emerald-400 mb-1 tabular-nums">{changeInNew.toLocaleString()}</div>
-                        <p className="text-white/60 text-sm font-bold">ليرة جديدة</p>
+                        <p className="text-slate-300/70 text-xs font-bold uppercase tracking-widest mb-2">{t.customerChange}</p>
+                        <div className="text-6xl font-black text-emerald-400 mb-1 tabular-nums">{changeInNew.toLocaleString(lang === 'ar' ? 'ar-SY' : 'en-US')}</div>
+                        <p className="text-white/70 text-sm font-bold">{t.newUnit}</p>
                         <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-white">
-                            <span className="text-2xl font-black tabular-nums">{(Math.round(changeInNew * RATE)).toLocaleString()}</span>
-                            <span className="text-white/40 text-xs font-bold">ليرة قديمة</span>
+                            <span className="text-2xl font-black tabular-nums">{(Math.round(changeInNew * RATE)).toLocaleString(lang === 'ar' ? 'ar-SY' : 'en-US')}</span>
+                            <span className="text-white/50 text-xs font-bold">{t.oldUnit}</span>
                         </div>
                     </div>
 
@@ -308,17 +452,17 @@
                             {allScenarios.map((scen) => (
                                 <div key={scen.id} className={`rounded-[2rem] border-2 p-5 bg-white shadow-sm ${scen.color}`}>
                                     <div className="mb-4">
-                                        <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black text-white ${scen.badge}`}>{scen.title}</span>
+                                        <span className={`px-4 py-1.5 rounded-xl text-xs font-black text-white ${scen.badge}`}>{scen.title}</span>
                                     </div>
                                     <div className="space-y-2">
                                         {scen.items.map((item, idx) => (
                                             <div key={idx} className="bg-slate-50 rounded-xl p-3 flex justify-between items-center border border-slate-100">
                                                 <div className="flex items-center text-slate-900 gap-2">
-                                                    <span className="text-lg font-black tabular-nums">{item.val.toLocaleString()}</span>
-                                                    <span className="text-xs font-bold text-slate-500">ليرة {item.type}</span>
+                                                    <span className="text-lg font-black tabular-nums">{item.val.toLocaleString(lang === 'ar' ? 'ar-SY' : 'en-US')}</span>
+                                                    <span className="text-xs font-bold text-slate-600/70">{lang === 'ar' ? `ليرة ${item.type}` : `${item.type} Lira`}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] font-bold text-slate-400">عدد</span>
+                                                    <span className="text-xs font-bold text-slate-500/70">{t.countWord}</span>
                                                     <span className="text-2xl font-black text-indigo-600 tabular-nums">{item.count}</span>
                                                 </div>
                                             </div>
@@ -328,15 +472,17 @@
                             ))}
                         </div>
                     ) : changeInNew > 0 && (
-                         <div className="py-10 text-center opacity-30">
-                            <p className="text-sm font-black uppercase tracking-widest text-slate-900">لا يوجد فكة كافية لتغطية هذا المبلغ</p>
+                         <div className="py-10 text-center opacity-40">
+                            <p className="text-sm font-black uppercase tracking-widest text-slate-900">{t.noEnough}</p>
                          </div>
                     )}
 
                     {changeInNew <= 0 && (
-                        <div className="py-16 text-center opacity-10">
+                        <div className="py-16 text-center opacity-15">
                             <div className="flex justify-center mb-4"><IconCoins /></div>
-                            <p className="text-sm font-black uppercase tracking-widest leading-loose text-slate-900">أدخل المبالغ<br/>لعرض احتمالات الفكة</p>
+                            <p className="text-sm font-black uppercase tracking-widest leading-loose text-slate-900" style={{ whiteSpace: 'pre-line' }}>
+                                {t.enterToShow}
+                            </p>
                         </div>
                     )}
                 </div>
@@ -353,7 +499,7 @@
                 if (tg) { tg.ready(); tg.expand(); }
                 fetch("https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/rates.json")
                     .then(res => res.json())
-                    .then(data => { if(data.rates) setRates(data.rates); })
+                    .then(data => { if (data.rates) setRates(data.rates); })
                     .catch(() => {});
             }, []);
 
@@ -364,19 +510,22 @@
                 <div className={`max-w-md mx-auto min-h-screen pb-10 ${isAr ? 'rtl text-right' : 'ltr text-left'}`}>
                     <div className="px-4 py-3 flex justify-between items-center border-b border-black/5">
                         <div className="font-black text-xl text-indigo-600 tracking-tighter">{t.title}</div>
-                        <button onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} className="bg-black/5 px-4 py-1.5 rounded-full text-[11px] font-black">
+                        <button
+                            onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+                            className="bg-black/5 px-4 py-1.5 rounded-full text-[12px] font-black text-slate-800/80"
+                        >
                             {lang === 'ar' ? 'English' : 'العربية'}
                         </button>
                     </div>
 
                     <div className="sticky-tabs flex px-4 border-b border-black/5">
-                        <button 
+                        <button
                             onClick={() => setActiveTab('converter')}
                             className={`flex-1 py-4 text-sm font-black transition-all ${activeTab === 'converter' ? 'tab-active' : 'tab-inactive'}`}
                         >
                             {t.tab1}
                         </button>
-                        <button 
+                        <button
                             onClick={() => setActiveTab('change')}
                             className={`flex-1 py-4 text-sm font-black transition-all ${activeTab === 'change' ? 'tab-active' : 'tab-inactive'}`}
                         >
@@ -388,7 +537,7 @@
                         {activeTab === 'converter' ? (
                             <SmartConverter lang={lang} t={t} rates={rates} />
                         ) : (
-                            <ChangeCalculator />
+                            <ChangeCalculator lang={lang} t={t} />
                         )}
                     </div>
                 </div>

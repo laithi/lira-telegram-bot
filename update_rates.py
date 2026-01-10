@@ -5,49 +5,72 @@ import pytz
 
 def get_rates():
     url = "https://sp-today.com/currencies"
+    # رأس طلب (Header) يحاكي متصفح حقيقي بشكل أفضل لتجنب الحظر
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+        'Referer': 'https://sp-today.com/'
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        print("Starting request to website...")
+        response = requests.get(url, headers=headers, timeout=20)
+        
+        if response.status_code != 200:
+            return f"Error: Website returned status code {response.status_code}"
+
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        table = soup.find('table')
-        if not table:
-            return "Error: Could not find the price table."
+        # البحث عن الجداول في الصفحة
+        tables = soup.find_all('table')
+        if not tables:
+            return "Error: No tables found on the page."
+
+        # نختار أول جدول يحتوي على بيانات العملات غالباً
+        table = tables[0]
 
         syria_tz = pytz.timezone('Asia/Damascus')
         now = datetime.now(syria_tz).strftime('%Y-%m-%d %H:%M:%S')
         
         output = f"Last Update: {now} (Damascus Time)\n"
-        output += "-" * 45 + "\n"
-        output += f"{'Currency':<20} | {'Buy':<10} | {'Sell':<10}\n"
-        output += "-" * 45 + "\n"
+        output += "=" * 45 + "\n"
+        output += f"{'العملة':<20} | {'شراء':<10} | {'مبيع':<10}\n"
+        output += "=" * 45 + "\n"
 
         rows = table.find_all('tr')
-        data_found = False
+        count = 0
 
         for row in rows:
-            cols = row.find_all('td')
+            cols = row.find_all(['td', 'th'])
             if len(cols) >= 3:
-                name = cols[0].text.strip().replace('\n', '')
-                buy = cols[1].text.strip()
-                sell = cols[2].text.strip()
-                if buy.replace(',', '').isdigit() or '.' in buy:
-                    output += f"{name:<20} | {buy:<10} | {sell:<10}\n"
-                    data_found = True
+                # تنظيف النص من أي رموز أو مسافات زائدة
+                name = cols[0].get_text(strip=True)
+                buy = cols[1].get_text(strip=True)
+                sell = cols[2].get_text(strip=True)
+                
+                # تخطي رأس الجدول إذا كان يحتوي على كلمات بدل أرقام في خانة السعر
+                if 'شراء' in buy or 'سعر' in buy:
+                    continue
+                
+                output += f"{name:<20} | {buy:<10} | {sell:<10}\n"
+                count += 1
         
-        return output if data_found else "Error: No data extracted."
+        if count == 0:
+            return "Error: Could not extract any data rows."
+            
+        print(f"Successfully extracted {count} currencies.")
+        return output
+
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Script Error: {str(e)}"
 
 if __name__ == "__main__":
-    data = get_rates()
-    # تم تغيير اسم الملف هنا
-    if "Error" not in data:
+    result = get_rates()
+    # طباعة النتيجة في الـ Log الخاص بـ GitHub لترقبه
+    print(result)
+    
+    # لا نقوم بتحديث الملف إذا كان هناك خطأ تقني فادح
+    if "Script Error" not in result:
         with open("ratescur.txt", "w", encoding="utf-8") as f:
-            f.write(data)
-        print("Success: ratescur.txt updated.")
-    else:
-        print(data)
+            f.write(result)
+        print("File 'ratescur.txt' has been updated.")

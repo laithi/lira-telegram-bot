@@ -160,8 +160,7 @@ function getKeyboard(id) {
       Markup.button.callback(t.refreshRates, "refreshRates"),
       Markup.button.callback(t.fxBtn, "showFx"),
     ],
-    [Markup.button.webApp(t.openMiniApp, APP_URL)],
-    // --- تمت إضافة الزر هنا ---
+    // --- تم حذف زر التطبيق المصغر والإبقاء على الرابط ---
     [Markup.button.url("🌐 MyLira Online", "https://mylira.online/lira.html")]
   ]);
 }
@@ -306,7 +305,6 @@ function buildResultMessage(lang, mode, amount, res) {
     "",
   ];
 
-  // الملاحظة تظهر أولاً كما طلبت
   if (res.remaining > 0) {
     lines.push(`*${t.changeNote}*`);
     if (isOldToNew)
@@ -333,7 +331,6 @@ function buildResultMessage(lang, mode, amount, res) {
 
   if (!res.dist.length) lines.push("—");
   else {
-    // ✅ تعديل: الرمز ثم الفئة ثم كلمة "عدد" ثم العدد + توحيد طول الأسطر
     const denomWidth = Math.max(...res.dist.map((p) => String(p.v).length), 1);
     const countWidth = Math.max(...res.dist.map((p) => String(p.count).length), 1);
     const countWord = lang === "ar" ? "عدد" : "count";
@@ -341,7 +338,6 @@ function buildResultMessage(lang, mode, amount, res) {
     for (const p of res.dist) {
       const denomStr = String(p.v).padStart(denomWidth, " ");
       const countStr = String(p.count).padStart(countWidth, " ");
-      // استخدام monospace لضمان تساوي الطول ومحاذاة ثابتة
       lines.push(`\`${"‏"}${p.s}  ${denomStr}  ${countWord}  ${countStr}\``);
     }
   }

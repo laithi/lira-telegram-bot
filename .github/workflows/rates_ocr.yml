@@ -1,0 +1,39 @@
+name: Build rates.json from rates.txt
+
+on:
+  push:
+    paths:
+      - "rates.txt"
+      - "scripts/extract_rates.py"
+      - ".github/workflows/rates_ocr.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run extractor
+        run: |
+          python scripts/extract_rates.py
+
+      - name: Commit rates.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add rates.json
+          git commit -m "Update rates.json" || echo "No changes"
+          git push

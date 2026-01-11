@@ -1,40 +1,40 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-11T00:04:30.225588+00:00",
+  "generated_at_utc": "2026-01-11T10:30:18.130162+00:00",
   "base": "SYP",
   "mode": "official_mid_rates",
   "rates": {
     "USD": {
-      "mid": null,
+      "mid": 12035.0,
       "change": null
     },
     "AED": {
-      "mid": null,
+      "mid": 3260.0,
       "change": null
     },
     "SAR": {
-      "mid": null,
+      "mid": 3193.0,
       "change": null
     },
     "EUR": {
-      "mid": null,
+      "mid": 13945.0,
       "change": null
     },
     "KWD": {
-      "mid": null,
+      "mid": 39070.0,
       "change": null
     },
     "SEK": {
-      "mid": null,
+      "mid": 1300.0,
       "change": null
     },
     "GBP": {
-      "mid": null,
+      "mid": 16048.5,
       "change": null
     },
     "JOD": {
-      "mid": null,
+      "mid": 16902.0,
       "change": null
     }
   },

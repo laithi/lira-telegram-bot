@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import re
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,91 +10,105 @@ ROOT = Path(__file__).resolve().parents[1]
 RATES_TXT = ROOT / "rates.txt"
 RATES_JSON = ROOT / "rates.json"
 
-# order you want in the bot
+# order you want in the bot / frontend
 ORDERED = ["USD", "AED", "SAR", "EUR", "KWD", "SEK", "GBP", "JOD"]
+
+
+def _to_float(s: str) -> float:
+    """Normalize 12130,00 → 12130.00 and cast to float."""
+    s = s.strip()
+    s = s.replace("\u066b", ".").replace("\u066c", ",")  # just in case Arabic separators
+    s = s.replace(",", "")
+    return float(s)
+
 
 def parse_rates_txt(text: str):
     """
-    Expected format (blank lines allowed):
-      USD 🇺🇸
-      111.00
+    Expected format (3-line blocks, separated by blank line):
 
-      AED 🇦🇪
-      30.24
-      ...
-    We will:
-      - detect a currency line by leading 3-letter code
-      - take the next non-empty line as its value
-      - ignore flags/extra text after code
+    USD 🇺🇸
+    12130.00
+    12200.00
+
+    AED 🇦🇪
+    3269.00
+    3321.00
     """
     lines = [ln.strip() for ln in text.splitlines()]
-    # keep blank lines for stepping, but we'll search next non-empty for value
-    rates = {}
+    rates: dict[str, dict[str, float]] = {}
 
     i = 0
     while i < len(lines):
         line = lines[i]
+        if not line:
+            i += 1
+            continue
+
+        # "USD 🇺🇸" -> code = USD
         m = re.match(r"^([A-Z]{3})\b", line)
         if not m:
             i += 1
             continue
 
-        code = m.group(1)
+        code = m.group(1).upper()
 
-        # find next non-empty line as value
-        j = i + 1
-        while j < len(lines) and lines[j].strip() == "":
-            j += 1
+        # لازم يكون عندنا سطرين بعده (مبيع / شراء)
+        if i + 2 >= len(lines):
+            break
 
-        if j >= len(lines):
-            rates[code] = None
-            i = j
+        buy_line = lines[i + 1].strip()
+        sell_line = lines[i + 2].strip()
+
+        if not buy_line or not sell_line:
+            i += 1
             continue
 
-        raw_val = lines[j].strip().replace(",", "")
-
-        # allow values like 111.00 or 111 or 111٫00 (Arabic decimal)
-        raw_val = raw_val.replace("٫", ".")
         try:
-            val = float(raw_val)
-        except Exception:
-            val = None
+            buy = _to_float(buy_line)
+            sell = _to_float(sell_line)
+        except ValueError:
+            i += 1
+            continue
 
-        rates[code] = val
-        i = j + 1
+        rates[code] = {"buy": buy, "sell": sell}
+        i += 3  # ننتقل للبلوك اللي بعده
 
     return rates
 
-def build_output(rates_map: dict):
+
+def build_output(rates_map: dict[str, dict[str, float]]):
+    """Build final JSON structure consumed by the bot / frontend."""
     now = datetime.now(timezone.utc).isoformat()
 
-    out = {
+    out_rates: dict[str, dict[str, float | None]] = {}
+    for code in ORDERED:
+        if code not in rates_map:
+            continue
+
+        buy = float(rates_map[code]["buy"])
+        sell = float(rates_map[code]["sell"])
+        mid = round((buy + sell) / 2, 2)
+
+        out_rates[code] = {
+            "buy": buy,
+            "sell": sell,
+            "mid": mid,      # نخليه مشان الكومباتيبليتي
+            "change": None,
+        }
+
+    return {
         "source": "Manual rates feed (rates.txt)",
         "bulletin_date": None,
         "generated_at_utc": now,
         "base": "SYP",
-        "mode": "official_mid_rates",
-        "rates": {},
+        "mode": "manual_buy_sell",
+        "rates": out_rates,
         "ordered_currencies": ORDERED,
         "notes": [
-            "Rates are maintained manually in rates.txt and compiled to rates.json via GitHub Actions."
+            "Rates are maintained manually in rates.txt (buy / sell) and compiled to rates.json via scripts/extract_rates.py.",
         ],
     }
 
-    for code in ORDERED:
-        mid = rates_map.get(code)
-        out["rates"][code] = {
-            "mid": mid if isinstance(mid, (int, float)) else None,
-            "change": None
-        }
-
-    # also keep any extra currencies that may exist in file
-    for code, mid in rates_map.items():
-        if code in out["rates"]:
-            continue
-        out["rates"][code] = {"mid": mid if isinstance(mid, (int, float)) else None, "change": None}
-
-    return out
 
 def main():
     if not RATES_TXT.exists():
@@ -104,10 +118,17 @@ def main():
     rates_map = parse_rates_txt(txt)
     out = build_output(rates_map)
 
-    RATES_JSON.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    RATES_JSON.write_text(
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     print("✅ Generated rates.json")
     for c in ORDERED:
-        print(c, "=>", out["rates"][c]["mid"])
+        r = out["rates"].get(c)
+        if not r:
+            continue
+        print(c, "=> buy", r["buy"], "| sell", r["sell"], "| mid", r["mid"])
+
 
 if __name__ == "__main__":
     main()

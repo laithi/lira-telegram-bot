@@ -1,56 +1,56 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-12T09:35:12.283485+00:00",
+  "generated_at_utc": "2026-01-12T10:08:58.715326+00:00",
   "base": "SYP",
   "mode": "manual_buy_sell",
   "rates": {
     "USD": {
-      "buy": 12130.0,
-      "sell": 12200.0,
-      "mid": 12165.0,
+      "buy": 12100.0,
+      "sell": 12180.0,
+      "mid": 12140.0,
       "change": null
     },
     "AED": {
-      "buy": 3269.0,
-      "sell": 3321.0,
-      "mid": 3295.0,
+      "buy": 3261.0,
+      "sell": 3316.0,
+      "mid": 3288.5,
       "change": null
     },
     "SAR": {
-      "buy": 3202.0,
-      "sell": 3253.0,
-      "mid": 3227.5,
+      "buy": 3194.0,
+      "sell": 3248.0,
+      "mid": 3221.0,
       "change": null
     },
     "EUR": {
-      "buy": 14000.0,
-      "sell": 14200.0,
-      "mid": 14100.0,
+      "buy": 14020.0,
+      "sell": 14230.0,
+      "mid": 14125.0,
       "change": null
     },
     "KWD": {
-      "buy": 39180.0,
-      "sell": 39804.0,
-      "mid": 39492.0,
+      "buy": 38936.0,
+      "sell": 39589.0,
+      "mid": 39262.5,
       "change": null
     },
     "SEK": {
-      "buy": 1304.0,
-      "sell": 1324.0,
-      "mid": 1314.0,
+      "buy": 1305.0,
+      "sell": 1327.0,
+      "mid": 1316.0,
       "change": null
     },
     "GBP": {
-      "buy": 16094.0,
-      "sell": 16350.0,
-      "mid": 16222.0,
+      "buy": 16115.0,
+      "sell": 16385.0,
+      "mid": 16250.0,
       "change": null
     },
     "JOD": {
-      "buy": 16949.0,
-      "sell": 17219.0,
-      "mid": 17084.0,
+      "buy": 16896.0,
+      "sell": 17179.0,
+      "mid": 17037.5,
       "change": null
     }
   },

@@ -1,40 +1,56 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-12T06:38:55.733259+00:00",
+  "generated_at_utc": "2026-01-12T09:08:51.080856+00:00",
   "base": "SYP",
-  "mode": "official_mid_rates",
+  "mode": "manual_buy_sell",
   "rates": {
     "USD": {
-      "mid": 12130.0,
+      "buy": 12130.0,
+      "sell": 12200.0,
+      "mid": 12165.0,
       "change": null
     },
     "AED": {
-      "mid": 3269.0,
+      "buy": 3269.0,
+      "sell": 3321.0,
+      "mid": 3295.0,
       "change": null
     },
     "SAR": {
-      "mid": 3202.0,
+      "buy": 3202.0,
+      "sell": 3253.0,
+      "mid": 3227.5,
       "change": null
     },
     "EUR": {
-      "mid": 14000.0,
+      "buy": 14000.0,
+      "sell": 14200.0,
+      "mid": 14100.0,
       "change": null
     },
     "KWD": {
-      "mid": 39180.0,
+      "buy": 39180.0,
+      "sell": 39804.0,
+      "mid": 39492.0,
       "change": null
     },
     "SEK": {
-      "mid": 1304.0,
+      "buy": 1304.0,
+      "sell": 1324.0,
+      "mid": 1314.0,
       "change": null
     },
     "GBP": {
-      "mid": 16094.0,
+      "buy": 16094.0,
+      "sell": 16350.0,
+      "mid": 16222.0,
       "change": null
     },
     "JOD": {
-      "mid": 16949.0,
+      "buy": 16949.0,
+      "sell": 17219.0,
+      "mid": 17084.0,
       "change": null
     }
   },
@@ -49,6 +65,6 @@
     "JOD"
   ],
   "notes": [
-    "Rates are maintained manually in rates.txt and compiled to rates.json via GitHub Actions."
+    "Rates are maintained manually in rates.txt (buy / sell) and compiled to rates.json via scripts/extract_rates.py."
   ]
 }

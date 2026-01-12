@@ -1,7 +1,7 @@
 {
   "source": "Manual rates feed (rates.txt)",
   "bulletin_date": null,
-  "generated_at_utc": "2026-01-12T09:08:51.080856+00:00",
+  "generated_at_utc": "2026-01-12T09:33:56.176143+00:00",
   "base": "SYP",
   "mode": "manual_buy_sell",
   "rates": {
@@ -63,8 +63,5 @@
     "SEK",
     "GBP",
     "JOD"
-  ],
-  "notes": [
-    "Rates are maintained manually in rates.txt (buy / sell) and compiled to rates.json via scripts/extract_rates.py."
   ]
 }

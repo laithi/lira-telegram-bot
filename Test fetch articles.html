@@ -3,85 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>اختبار جلب المقالات من GitHub</title>
-  <style>
-    body{font-family: system-ui, -apple-system, "Segoe UI", Arial; margin:20px; background:#f8fafc; color:#0f172a;}
-    .card{background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:14px; margin:12px 0;}
-    .title{font-weight:800; font-size:18px; margin:0 0 6px;}
-    .meta{font-size:12px; color:#475569;}
-    .err{background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; padding:12px; border-radius:12px;}
-    a{color:#2563eb; text-decoration:none;}
-    a:hover{text-decoration:underline;}
-    code{background:#eef2ff; padding:2px 6px; border-radius:6px;}
-  </style>
+  <title>اختبار articles.json</title>
 </head>
-
-<body>
-  <h1>✅ اختبار جلب المقالات من GitHub</h1>
-  <p>إذا ظهرت المقالات تحت، معناته الجلب تمام.</p>
-  <p>مصدر البيانات: <code id="src"></code></p>
-
-  <div id="status" class="meta">جاري التحميل...</div>
-  <div id="list"></div>
+<body style="font-family: system-ui; padding:20px;">
+  <h2>اختبار جلب articles.json من GitHub</h2>
+  <div id="out">جاري التحميل...</div>
 
   <script>
-    // 1) ضع رابط RAW الصحيح هنا
-    const FEED_URL = "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/articles.json";
+    const URL = "https://raw.githubusercontent.com/laithi/lira-telegram-bot/main/articles.json";
 
-    document.getElementById("src").textContent = FEED_URL;
-
-    async function run() {
-      const status = document.getElementById("status");
-      const list = document.getElementById("list");
-
-      try {
-        status.textContent = "جاري جلب البيانات...";
-        const res = await fetch(FEED_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-
-        const data = await res.json();
+    fetch(URL, { cache: "no-store" })
+      .then(r => {
+        if(!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(data => {
         const items = (data && data.items) ? data.items : [];
-
-        status.textContent = `تم الجلب ✅ (عدد المقالات: ${items.length})`;
-
-        if (!items.length) {
-          list.innerHTML = `<div class="card"><b>لا يوجد مقالات</b><div class="meta">items فارغة داخل JSON</div></div>`;
-          return;
-        }
-
-        // عرض فقط المنشور published=true
-        const published = items.filter(x => x && x.published);
-
-        list.innerHTML = published.map(a => `
-          <div class="card">
-            <div class="title">${escapeHtml(a.title || a.slug)}</div>
-            <div class="meta">slug: ${escapeHtml(a.slug || "")} • date: ${escapeHtml(a.date || "")}</div>
-            <div style="margin-top:8px">${escapeHtml(a.excerpt || "")}</div>
-            ${a.url ? `<div style="margin-top:10px"><a href="${a.url}" target="_blank" rel="noopener">فتح المقال</a></div>` : ""}
-          </div>
-        `).join("");
-
-      } catch (e) {
-        status.textContent = "";
-        document.getElementById("list").innerHTML =
-          `<div class="err">
-            <b>فشل الجلب ❌</b><br>
-            السبب: <code>${escapeHtml(String(e.message || e))}</code><br><br>
-            تأكد من:<br>
-            - رابط RAW صحيح (بدون blob)<br>
-            - الفرع main أو master صحيح<br>
-            - الملف اسمه articles.json بالضبط<br>
-          </div>`;
-      }
-    }
-
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-      }[m]));
-    }
-
-    run();
+        document.getElementById("out").innerHTML =
+          "<b>تم ✅</b><br>عدد العناصر: " + items.length +
+          "<pre style='white-space:pre-wrap; background:#f3f4f6; padding:12px; border-radius:12px; margin-top:10px;'>" +
+          JSON.stringify(data, null, 2) + "</pre>";
+      })
+      .catch(err => {
+        document.getElementById("out").innerHTML =
+          "<b style='color:#b91c1c'>فشل ❌</b><br>" + err.message;
+      });
   </script>
 </body>
 </html>

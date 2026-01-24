@@ -1,42 +1,5 @@
-
 {
   "source": "MyLira Articles Feed (GitHub)",
-  "generated_at_utc": "2026-01-22T00:00:00Z",
-  "base_url": "https://mylira.online",
-  "articles_path": "/articles",
-  "items": [
-    {
-      "slug": "new-syp-2026-quick-guide",
-      "title": "دليل سريع: الليرة السورية الجديدة 2026",
-      "excerpt": "شرح مختصر كيف يتم حذف صفرين وكيف تحسب الرواتب والأسعار بسرعة.",
-      "date": "2026-01-22",
-      "cover": "https://mylira.online/articles/images/new-syp-2026.webp",
-      "url": "https://mylira.online/articles/new-syp-2026-quick-guide.html",
-      "tags": ["2026", "الليرة", "حذف الأصفار"],
-      "lang": "ar",
-      "published": true
-    },
-    {
-      "slug": "cash-change-calculator-howto",
-      "title": "كيف تستخدم حساب الكاش والباقي بدون أخطاء",
-      "excerpt": "طريقة عملية لحساب الفاتورة والمدفوع، ومعرفة الباقي أو النقص فوراً.",
-      "date": "2026-01-24",
-      "cover": "https://mylira.online/articles/images/cash-change.webp",
-      "url": "https://mylira.online/articles/cash-change-calculator-howto.html",
-      "tags": ["كاش", "باقي", "حاسبة"],
-      "lang": "ar",
-      "published": true
-    },
-    {
-      "slug": "usd-rate-explained",
-      "title": "كيف تقرأ نشرة الدولار (شراء/مبيع) بشكل صحيح",
-      "excerpt": "الفرق بين سعر الشراء والمبيع ولماذا يتغير الرقم بينهما.",
-      "date": "2026-01-26",
-      "cover": "https://mylira.online/articles/images/usd-rate.webp",
-      "url": "https://mylira.online/articles/usd-rate-explained.html",
-      "tags": ["دولار", "سعر الصرف", "نشرة"],
-      "lang": "ar",
-      "published": true
-    }
-  ]
+  "generated_at_utc": null,
+  "items": []
 }

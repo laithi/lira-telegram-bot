@@ -1,5 +1,17 @@
 {
   "source": "MyLira Articles Feed (GitHub)",
   "generated_at_utc": null,
-  "items": []
+  "items": [
+    {
+      "slug": "test-article-1",
+      "title": "مقال تجريبي 1",
+      "excerpt": "هذا مقال للتجربة فقط للتأكد أن الموقع يجلب البيانات من GitHub بشكل صحيح.",
+      "date": "2026-01-22",
+      "cover": "",
+      "url": "",
+      "tags": ["تجربة"],
+      "lang": "ar",
+      "published": true
+    }
+  ]
 }
